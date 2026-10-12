@@ -199,7 +199,7 @@ struct AlertsMenuBarContentView: View {
     private func heading(_ group: MenuBarAlertGroup) -> some View {
         HStack(spacing: 8) {
             if group.identity != nil {
-                Image(nsImage: ProcessIconProvider.shared.icon(forPath: group.executablePath))
+                Image(nsImage: ProcessIconProvider.shared.rowIcon(forPath: group.executablePath))
                     .resizable().frame(width: 18, height: 18)
             } else {
                 Image(systemName: "desktopcomputer").frame(width: 18, height: 18)

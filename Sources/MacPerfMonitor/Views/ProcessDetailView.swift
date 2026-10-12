@@ -15,6 +15,26 @@ import SwiftUI
 /// the model or the chart store on their own, so a table tick re-renders only
 /// the pieces whose data changed rather than re-laying-out the whole inspector.
 struct ProcessDetailView: View {
+    let identity: ProcessIdentity
+
+    var body: some View {
+        // Keep content's minimum width out of the viewport's size negotiation.
+        // Only the content gets a new identity, not the native scroll container.
+        GeometryReader { _ in
+            ScrollViewReader { scroll in
+                ScrollView {
+                    ProcessDetailContent(identity: identity)
+                        .id(identity)
+                }
+                .onChange(of: identity) { _, identity in
+                    scroll.scrollTo(identity, anchor: .top)
+                }
+            }
+        }
+    }
+}
+
+private struct ProcessDetailContent: View {
     @Environment(\.samplerModel) private var model
     let identity: ProcessIdentity
 
@@ -23,32 +43,27 @@ struct ProcessDetailView: View {
     /// the charts leaf.
     @State private var store = ProcessDetailStore()
 
-    /// Charts are built one beat after the inspector mounts, so opening the pane
-    /// for a process slides in smoothly instead of stuttering while the charts
-    /// lay out on the first frame. A same-height placeholder holds the layout so
-    /// nothing jumps when the real charts take over. Reset per process because
-    /// the parent recreates this view (`.id(selection)`) on each open.
+    /// Defer chart construction so selection feedback renders first. Equal-height
+    /// placeholders hold the layout until the charts are ready. The scroll view
+    /// replaces only this content on each selection.
     @State private var chartsReady = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                ProcessDetailHeader(identity: identity)
-                ProcessDetailDescription(identity: identity)
-                rangePicker
-                ProcessDetailCharts(
-                    store: store, range: range, chartsReady: chartsReady,
-                    hasHistory: model?.hasHistory ?? false)
-                ProcessDetailMetadata(identity: identity)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 18) {
+            ProcessDetailHeader(identity: identity)
+            ProcessDetailDescription(identity: identity)
+            rangePicker
+            ProcessDetailCharts(
+                store: store, range: range, chartsReady: chartsReady,
+                hasHistory: model?.hasHistory ?? false)
+            ProcessDetailMetadata(identity: identity)
         }
+        .padding(16)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .onAppear { fullReload(spinner: true) }
         .task(id: identity) {
-            // Let the inspector's slide-in animation start before building the
-            // charts; ~300 ms covers the open so the first frames stay smooth.
             try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
             chartsReady = true
         }
         .onChange(of: range) { fullReload(spinner: true) }

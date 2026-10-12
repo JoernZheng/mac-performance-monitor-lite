@@ -241,7 +241,7 @@ struct BatteryMenuBarContentView: View {
 
     private func energyRow(_ process: ProcessSample, maxEnergy: Double) -> some View {
         HStack(spacing: 8) {
-            Image(nsImage: ProcessIconProvider.shared.icon(forPath: process.executablePath))
+            Image(nsImage: ProcessIconProvider.shared.rowIcon(forPath: process.executablePath))
                 .resizable()
                 .frame(width: 16, height: 16)
             Text(process.displayName)

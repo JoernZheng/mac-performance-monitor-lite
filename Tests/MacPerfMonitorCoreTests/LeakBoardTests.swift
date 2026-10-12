@@ -113,6 +113,98 @@ final class LeakBoardTests: XCTestCase {
         XCTAssertTrue(board.isEmpty)
     }
 
+    private func seedGrowth(count: Int = 81, processes: Int = 1) throws -> Date {
+        let base = Date(timeIntervalSince1970: 1_700_000_040)
+        for i in 0..<count {
+            let ts = base.addingTimeInterval(Double(i) * 30)
+            try insertTick(
+                ts,
+                (0..<processes).map { index in
+                    Make.process(
+                        timestamp: ts, pid: Int32(1000 + index), startTime: startTime,
+                        name: "Growth\(index)", footprint: (100 + UInt64(i) * 4) * mb)
+                })
+        }
+        return base.addingTimeInterval(Double(count - 1) * 30)
+    }
+
+    func testLiveIdentityFilteringMatchesFullScanAndRejectsReusedPID() throws {
+        let now = try seedGrowth(processes: 40)
+        let all = try store.leakBoard(now: now)
+        XCTAssertEqual(all.count, 40)
+        let identity = ProcessIdentity(pid: 1015, startTime: startTime)
+        let live = try store.leakBoard(now: now, liveIdentities: [identity])
+        XCTAssertEqual(live, all.filter { $0.identity == identity })
+        XCTAssertTrue(try store.leakBoard(now: now, liveIdentities: []).isEmpty)
+        XCTAssertTrue(
+            try store.leakBoard(
+                now: now,
+                liveIdentities: [.init(pid: 1015, startTime: now)]
+            ).isEmpty)
+    }
+
+    func testCompletedMinuteTrendUsesExactLatestRawFootprint() throws {
+        let now = try seedGrowth()
+        try Retention.run(store.databasePool, now: now)
+        let board = try store.leakBoard(now: now)
+        let row = try XCTUnwrap(board.first)
+        XCTAssertGreaterThan(row.finding.durationSeconds, 30 * 60)
+        XCTAssertEqual(row.latestFootprint, 420 * mb)
+        try store.databasePool.write { db in
+            try db.execute(sql: "DELETE FROM process_samples")
+        }
+        let minuteOnly = try store.leakBoard(now: now)
+        XCTAssertEqual(minuteOnly.first?.finding, row.finding)
+        XCTAssertNotEqual(minuteOnly.first?.latestFootprint, row.latestFootprint)
+    }
+
+    func testRejectedLongTrendCannotFallBackToRisingRawTail() throws {
+        let now = try seedGrowth()
+        XCTAssertEqual(try store.leakBoard(now: now).count, 1)
+        try Retention.run(store.databasePool, now: now)
+        try store.databasePool.write { db in
+            try db.execute(sql: "UPDATE process_minute SET footprint_avg = 104857600")
+        }
+        XCTAssertTrue(try store.leakBoard(now: now).isEmpty)
+        try store.databasePool.write { db in
+            try db.execute(
+                sql: "DELETE FROM process_minute WHERE bucket < ?",
+                arguments: [now.addingTimeInterval(-5 * 60).timeIntervalSince1970])
+        }
+        XCTAssertEqual(try store.leakBoard(now: now).count, 1)
+    }
+
+    func testFreshnessUsesRawBucketMeanAndIgnoresFutureAndUnreadableRows() throws {
+        let end = try seedGrowth()
+        try insertTick(
+            end.addingTimeInterval(20),
+            [
+                Make.process(
+                    timestamp: end.addingTimeInterval(20), pid: 1000,
+                    startTime: startTime, footprint: 424 * mb)
+            ])
+        var config = LeakDetector.Config.default
+        config.maximumGap = 120
+        XCTAssertEqual(
+            try store.leakBoard(config: config, now: end.addingTimeInterval(129)).count, 1)
+        XCTAssertTrue(
+            try store.leakBoard(config: config, now: end.addingTimeInterval(131)).isEmpty)
+        let baseline = try store.leakBoard(now: end.addingTimeInterval(2))
+        var unreadable = Make.process(
+            timestamp: end.addingTimeInterval(1), pid: 1000, startTime: startTime, footprint: 0)
+        unreadable.footprintReadable = false
+        try insertTick(end.addingTimeInterval(1), [unreadable])
+        XCTAssertEqual(try store.leakBoard(now: end.addingTimeInterval(2)), baseline)
+        XCTAssertEqual(baseline.first?.latestFootprint, 420 * mb)
+    }
+
+    func testIncompleteMinuteBucketsDoNotExtendTheTrend() throws {
+        let now = try seedGrowth(count: 41)
+        try Retention.run(store.databasePool, now: now.addingTimeInterval(60))
+        let tooShort = try store.leakBoard(now: now.addingTimeInterval(-1))
+        XCTAssertTrue(tooShort.isEmpty)
+    }
+
     /// An established slow leak must be flagged from the minute aggregates:
     /// the growth here ended 20 minutes before "now", outside the raw fast
     /// path's window, so only the minute tier can see it.

@@ -14,57 +14,17 @@ struct NetworkUpDownChart: View {
     var sampleCapacity: Int? = nil
 
     var body: some View {
-        Canvas { ctx, size in
-            // No gutter: the throughput labels are too wide for one, so the shared
-            // peak is captioned at the top-left instead.
-            let plot = MenuChart.plotRect(in: size, reserveGutter: false)
-            let mid = plot.midY
-            let halfHeight = plot.height / 2
-            let peak = max(download.max() ?? 0, upload.max() ?? 0, 1)
-            // Scale tight to the visible peak (a little headroom so it doesn't clip),
-            // not the coarse 1–2–5 rounding: the trace then fills the height and the
-            // axis adapts as throughput changes, instead of low traffic reading flat.
-            let upper = peak * 1.2
-
-            // Centre line + peak caption — the marked axis for both directions.
-            var centre = Path()
-            centre.move(to: CGPoint(x: plot.minX, y: mid))
-            centre.addLine(to: CGPoint(x: plot.maxX, y: mid))
-            ctx.stroke(centre, with: .color(MenuChart.gridColor), lineWidth: 0.5)
-            ctx.draw(
-                Text("\(ByteFormat.rate(peak)) peak").font(MenuChart.labelFont)
-                    .foregroundColor(MenuChart.labelColor),
-                at: CGPoint(x: plot.minX, y: plot.minY + 4), anchor: .topLeading)
-
-            func points(_ values: [Double], up: Bool) -> [CGPoint] {
-                return values.enumerated().map { index, value in
-                    let fraction = min(1, max(0, value / upper))
-                    let height = CGFloat(fraction) * halfHeight
-                    let x: CGFloat
-                    if let sampleCapacity, sampleCapacity > 0 {
-                        let fraction = LiveChartGeometry.normalizedSlot(
-                            index: index, count: values.count, capacity: sampleCapacity)
-                        x = plot.minX + CGFloat(fraction) * plot.width
-                    } else {
-                        let step = values.count >= 2 ? plot.width / CGFloat(values.count - 1) : 0
-                        x = plot.minX + CGFloat(index) * step
-                    }
-                    return CGPoint(
-                        x: x, y: up ? mid - height : mid + height)
-                }
-            }
-
-            if !download.isEmpty {
-                MenuChart.drawTrend(
-                    ctx, points: points(download, up: true), baselineY: mid,
-                    color: NetworkStyle.download, gradientTop: plot.minY, gradientBottom: mid)
-            }
-            if !upload.isEmpty {
-                MenuChart.drawTrend(
-                    ctx, points: points(upload, up: false), baselineY: mid,
-                    color: NetworkStyle.upload, gradientTop: plot.maxY, gradientBottom: mid)
-            }
-        }
+        let peak = max(download.max() ?? 0, upload.max() ?? 0, 1)
+        let upper = peak * 1.2
+        return MenuBitmapChart(
+            model: .init(
+                series: [
+                    .init(values: download, color: NetworkStyle.download),
+                    .init(values: upload, color: NetworkStyle.upload, downward: true),
+                ],
+                domain: -upper...upper, capacity: sampleCapacity, ticks: [0],
+                caption: t("%@ peak", ByteFormat.rate(peak)))
+        )
         .accessibilityHidden(true)
     }
 }

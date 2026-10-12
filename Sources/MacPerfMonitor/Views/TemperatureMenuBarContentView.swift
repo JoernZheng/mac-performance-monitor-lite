@@ -1,4 +1,3 @@
-import Charts
 import MacPerfMonitorCore
 import SwiftUI
 
@@ -60,22 +59,17 @@ struct TemperatureMenuBarContentView: View {
     private var sparkline: some View {
         let capacity = 60
         let values = model.systemHistory.elements().suffix(capacity).compactMap(\.cpuDieC)
-        let points = Array(values.enumerated())
-        return Chart(points, id: \.offset) { point in
-            let x = LiveChartGeometry.normalizedSlot(
-                index: point.offset, count: points.count, capacity: capacity)
-            AreaMark(x: .value("t", x), y: .value("c", point.element))
-                .foregroundStyle(ThermalStyle.cpu.opacity(0.18))
-            LineMark(x: .value("t", x), y: .value("c", point.element))
-                .foregroundStyle(ThermalStyle.cpu)
-                .interpolationMethod(.linear)
-        }
-        .chartYScale(domain: 20...sparklineTop)
-        .chartXScale(domain: 0...1)
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
+        return MenuBitmapChart(
+            model: .init(
+                series: [
+                    .init(values: values, color: ThermalStyle.cpu, smooth: false, gradient: false)
+                ],
+                domain: 20...sparklineTop, capacity: capacity, inset: 0,
+                accessibilityLabel: t("CPU die"),
+                accessibilityValue: values.last.map { TemperatureFormat.string($0) } ?? "--")
+        )
         .frame(height: 38)
-        .opacity(points.count > 1 ? 1 : 0)
+        .opacity(values.count > 1 ? 1 : 0)
     }
 
     private var sparklineTop: Double {

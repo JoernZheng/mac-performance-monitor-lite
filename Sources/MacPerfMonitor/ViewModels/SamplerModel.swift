@@ -277,6 +277,8 @@ final class SamplerModel: ObservableObject {
     /// the app does zero per-process work, since the menu-bar read-outs need only
     /// the cheap system sample. Read and written only on `queue`.
     private var processConsumers = 0
+    private var popoverVisible = false
+    private var idleReclaim: DispatchWorkItem?
 
     // MARK: Dial-rate refresh of the rows on screen
 
@@ -368,6 +370,7 @@ final class SamplerModel: ObservableObject {
     /// many minutes, so this latency is harmless, and it keeps the per-minute
     /// retention pass cheap. On-demand loads (dashboard/Insights) still scan fresh.
     private var leakScanCountdown = 0
+    private var leakScanInFlight = false
     private let leakScanEveryRetentions = 3
     /// Dedicated low-priority queue for the periodic leak scan, so the heavy read
     /// + regression never blocks the sampler queue (and thus sampling). The DB
@@ -623,7 +626,10 @@ final class SamplerModel: ObservableObject {
             // (which only runs on heavy ticks) evaluates the spike at once.
             if self.pressureMonitor == nil {
                 let monitor = MemoryPressureMonitor(queue: self.queue) { [weak self] in
-                    autoreleasepool { self?.tick(forceHeavy: true) }
+                    autoreleasepool {
+                        self?.scheduleIdleReclaim()
+                        self?.tick(forceHeavy: true)
+                    }
                 }
                 monitor.start()
                 self.pressureMonitor = monitor
@@ -703,7 +709,67 @@ final class SamplerModel: ObservableObject {
     /// Tell the sampler whether a main window exists, covered or not. See
     /// `windowOpen`.
     func setWindowOpen(_ open: Bool) {
-        queue.async { self.windowOpen = open }
+        queue.async {
+            self.windowOpen = open
+            self.scheduleIdleReclaim()
+        }
+    }
+
+    func setPopoverVisible(_ visible: Bool) {
+        queue.async {
+            self.popoverVisible = visible
+            self.scheduleIdleReclaim()
+        }
+    }
+
+    /// Debounced on the sampler queue so a close/reopen or panel handoff cannot
+    /// discard a live consumer's state. Recording and its delta baselines survive.
+    func requestIdleReclaim() {
+        queue.async { self.scheduleIdleReclaim() }
+    }
+
+    private func scheduleIdleReclaim() {
+        idleReclaim?.cancel()
+        idleReclaim = nil
+        guard !windowOpen, !popoverVisible, processConsumers == 0,
+            !popoverOpenForUI, gpuConsumers == 0
+        else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.windowOpen, !self.popoverVisible,
+                self.processConsumers == 0, !self.popoverOpenForUI, self.gpuConsumers == 0
+            else { return }
+            self.lastUIScanAt = nil
+            self.menuListRefreshedAt.removeAll()
+            self.fastPIDs.removeAll()
+            let store = self.store
+            self.readQueue.async {
+                self.clearHistoryCaches()
+                store?.databasePool.releaseMemoryEventually()
+            }
+            DispatchQueue.main.async {
+                self.latest = nil
+                self.processTrails.removeAll()
+                self.releaseTableUI()
+                for kind in MenuListKind.allCases { self.menuLists.clear(kind) }
+                self.terminatedProcesses.removeAll()
+                self.terminatedProcessIDs.removeAll()
+                MemoryReclaim.runNow()
+            }
+        }
+        idleReclaim = work
+        queue.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    private func releaseTableUI() {
+        if !displayProcesses.isEmpty {
+            displayProcesses = []
+            displayProcessesVersion &+= 1
+        }
+        fastCPUStates.removeAll()
+        fastCPURings.removeAll()
+        fastGPUStates.removeAll()
+        fastGPURings.removeAll()
+        gpuWorkloads.removeAll()
     }
 
     /// Install (or clear) the privileged helper-backed reader on the sampler.
@@ -988,7 +1054,11 @@ final class SamplerModel: ObservableObject {
     /// so the GPU timelines have a past to show. Balance with
     /// `removeGPUConsumer()`.
     func addGPUConsumer() {
-        queue.async { [weak self] in self?.gpuConsumers += 1 }
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.gpuConsumers += 1
+            self.scheduleIdleReclaim()
+        }
     }
 
     func removeGPUConsumer() {
@@ -996,6 +1066,7 @@ final class SamplerModel: ObservableObject {
             guard let self else { return }
             self.gpuConsumers = max(0, self.gpuConsumers - 1)
             self.updateANEPowerDemand()
+            self.scheduleIdleReclaim()
         }
     }
 
@@ -1019,6 +1090,7 @@ final class SamplerModel: ObservableObject {
         queue.async { [weak self] in
             guard let self else { return }
             self.processConsumers += 1
+            self.scheduleIdleReclaim()
             if self.processConsumers == 1 {
                 // Due immediately, so the next tick (or `requestImmediateTick`) both
                 // SCANS and PUBLISHES — force the table cadence too, otherwise a
@@ -1032,11 +1104,22 @@ final class SamplerModel: ObservableObject {
 
     /// Drop a per-process consumer registered with `addProcessConsumer()`. When the
     /// last one goes the heavy scan stops on the following tick (unless logging is
-    /// on); the last scanned lists are simply left in place, unobserved.
+    /// on). Release table-only state while keeping any open menu's trails.
     func removeProcessConsumer() {
         queue.async { [weak self] in
             guard let self else { return }
             self.processConsumers = max(0, self.processConsumers - 1)
+            if self.processConsumers == 0 {
+                self.fastPIDs.removeAll()
+                let keep = Set(self.popoverKindConsumers.filter { $0.value > 0 }.keys)
+                DispatchQueue.main.async {
+                    self.releaseTableUI()
+                    for kind in MenuListKind.allCases where !keep.contains(kind) {
+                        self.menuLists.clear(kind)
+                    }
+                }
+            }
+            self.scheduleIdleReclaim()
         }
     }
 
@@ -1050,6 +1133,7 @@ final class SamplerModel: ObservableObject {
             guard let self else { return }
             let prior = self.popoverKindConsumers[kind, default: 0]
             self.popoverKindConsumers[kind] = prior + 1
+            self.scheduleIdleReclaim()
             if prior == 0 { self.popoverTickCounter = self.popoverEveryTicks }
             // A list that hasn't recomputed within the dial interval holds dead
             // rows from the last time this popover was open — possibly hours
@@ -1073,6 +1157,11 @@ final class SamplerModel: ObservableObject {
         queue.async { [weak self] in
             guard let self else { return }
             self.popoverKindConsumers[kind] = max(0, (self.popoverKindConsumers[kind] ?? 0) - 1)
+            if self.popoverKindConsumers[kind] == 0, self.processConsumers == 0 {
+                self.menuListRefreshedAt.removeValue(forKey: kind)
+                DispatchQueue.main.async { self.menuLists.clear(kind) }
+            }
+            self.scheduleIdleReclaim()
         }
     }
 
@@ -1089,7 +1178,6 @@ final class SamplerModel: ObservableObject {
         /// Publish visible figures (the in-place row patches between table
         /// re-sorts). Dial-driven, never forced.
         var publishUI: Bool
-        var uiWantsProcesses: Bool
         var menuKinds: Set<MenuListKind>
     }
 
@@ -1287,21 +1375,16 @@ final class SamplerModel: ObservableObject {
         // to feed exist purely for UI. Skip them when nothing is consuming: an
         // opening surface registers its consumer and requests an immediate tick,
         // so its data is at most one tick away.
-        let uiWantsProcesses = processConsumers > 0 || popoverOpen
-        // Which top lists to compute this scan: each open popover's kind at
-        // 1 Hz, plus — on table-due ticks, when the scan already ran and four
-        // sorts of ~600 rows are noise — every list. So the Network tab's
-        // top-apps card updates at the table cadence (never the popover's
-        // 1 Hz), and a popover reopened while anything keeps the scan alive is
-        // at most one dial interval stale.
+        // Rank only the open menu's lists. A full process consumer also needs
+        // the dashboard cards, but only at the table cadence.
         var menuKinds = openPopoverKinds
-        if tableDue && uiWantsProcesses {
+        if tableDue && processConsumers > 0 {
             menuKinds.formUnion(MenuListKind.allCases)
             if !perAppNetworkEnabled { menuKinds.remove(.network) }
         }
         let job = ScanJob(
             scanDue: scanDue, tableDue: tableDue, alertsDue: alertsDue, publishUI: uiDue,
-            uiWantsProcesses: uiWantsProcesses, menuKinds: menuKinds)
+            menuKinds: menuKinds)
         // The database row rides the scan queue too, so the timer queue never
         // waits on the ~15 ms insert. Decided here, where the persist clock
         // lives: at most every `persistMinInterval`, decoupled from the table
@@ -1383,7 +1466,7 @@ final class SamplerModel: ObservableObject {
         // running would otherwise have to wait for the whole next one, which at
         // launch is the difference between the process table appearing in about
         // a second and in nearly two.
-        guard job.uiWantsProcesses || processConsumers > 0 || popoverOpenForUI else { return }
+        guard processConsumers > 0 || popoverOpenForUI else { return }
 
         // Trails freeze while nothing consumes the scan (full-mode recording
         // keeps running regardless); after a real gap the frozen points would
@@ -1397,18 +1480,27 @@ final class SamplerModel: ObservableObject {
             resetTrails = true
         }
         lastUIScanAt = scanNow
-        for kind in job.menuKinds { menuListRefreshedAt[kind] = scanNow }
+        let tableConsumer = processConsumers > 0
+        let menuKinds =
+            tableConsumer
+            ? job.menuKinds
+            : job.menuKinds.intersection(
+                Set(popoverKindConsumers.filter { $0.value > 0 }.keys))
+        for kind in menuKinds { menuListRefreshedAt[kind] = scanNow }
 
         let processes = result.processes
         let dropStaleTrails = resetTrails
         let didTable = job.tableDue
-        let menuKinds = job.menuKinds
         DispatchQueue.main.async {
             // Trails + menu lists refresh on every scan → 1 Hz while a popover
             // is open, so its top-process list stays live.
             if dropStaleTrails { self.processTrails.removeAll() }
             self.updateTrails(with: processes)
             let smoothed = self.smoothedCPUMap(for: processes)
+            if !tableConsumer {
+                let live = Set(processes.map(\.id))
+                self.gpuWorkloads = self.gpuWorkloads.filter { live.contains($0.key) }
+            }
             self.refreshMenuLists(processes, smoothed: smoothed, kinds: menuKinds)
             // The in-window table re-sorts only on the table cadence; between
             // those publishes every row's figures are patched in place from
@@ -1416,8 +1508,10 @@ final class SamplerModel: ObservableObject {
             if didTable {
                 self.latest = snapshot
                 self.pruneTerminated()
-                self.rebuildDisplayProcesses(live: processes, smoothed: smoothed)
-            } else if job.publishUI, !self.displayProcesses.isEmpty {
+                if tableConsumer {
+                    self.rebuildDisplayProcesses(live: processes, smoothed: smoothed)
+                }
+            } else if tableConsumer, job.publishUI, !self.displayProcesses.isEmpty {
                 var patches: [ProcessIdentity: ProcessSample] = [:]
                 patches.reserveCapacity(processes.count)
                 for process in processes {
@@ -1894,7 +1988,7 @@ final class SamplerModel: ObservableObject {
                     // grow slowly.
                     if self.leakScanCountdown == 0 {
                         self.leakScanCountdown = self.leakScanEveryRetentions - 1
-                        self.scheduleLeakScan(store)
+                        self.scheduleLeakScanOnQueue(store)
                     } else {
                         self.leakScanCountdown -= 1
                     }
@@ -1906,24 +2000,40 @@ final class SamplerModel: ObservableObject {
     /// Run the leak-board scan on its own queue, then fan the result out: the
     /// read cache lives on `readQueue`, the alert engine's leaking set on
     /// `queue`, and the published row highlight on main.
-    private func scheduleLeakScan(_ store: SampleStore) {
+    func scheduleLeakScan(_ store: SampleStore) {
+        queue.async { self.scheduleLeakScanOnQueue(store) }
+    }
+
+    private func scheduleLeakScanOnQueue(_ store: SampleStore) {
+        guard !leakScanInFlight, persistenceEnabled, self.store === store else { return }
+        leakScanInFlight = true
         let generation = persistenceGeneration
         let live = Set(carriedProcesses.map(\.id))
         let config = LeakDetector.Config(
             maximumGap: max(180, Self.configuredStandardResInterval() * 2))
         leakScanQueue.async { [weak self] in
-            guard let entries = try? store.leakBoard(config: config, liveIdentities: live) else {
-                AppLog.alerts.error("leak-board read failed; retaining the last evidence")
-                return
+            let result = Result {
+                try autoreleasepool { try store.leakBoard(config: config, liveIdentities: live) }
             }
             guard let self else { return }
             self.queue.async {
+                self.leakScanInFlight = false
+                guard case .success(let entries) = result else {
+                    if case .failure(let error) = result {
+                        AppLog.alerts.error(
+                            "leak-board read failed: \(String(describing: error), privacy: .public)"
+                        )
+                    }
+                    return
+                }
                 guard generation == self.persistenceGeneration,
                     self.persistenceEnabled, self.store === store
                 else { return }
+                let cacheForWindow = self.windowOpen || self.processConsumers > 0
                 self.readQueue.async {
-                    self.cachedLeakBoard = (Date(), entries)
+                    self.cachedLeakBoard = cacheForWindow ? (Date(), entries) : nil
                     self.cachedLeakSeries = nil
+                    if !cacheForWindow { store.databasePool.releaseMemoryEventually() }
                 }
                 self.leakingIDs = Set(entries.map(\.identity))
                 let published = self.leakingIDs
@@ -2100,7 +2210,7 @@ final class SamplerModel: ObservableObject {
         terminatedProcessIDs = Set(terminatedProcesses.keys)
         // Refresh the table at once so the killed row greys immediately rather
         // than waiting for the next heavy tick.
-        rebuildDisplayProcesses(live: latest?.processes ?? [])
+        if !displayProcesses.isEmpty { rebuildDisplayProcesses(live: latest?.processes ?? []) }
     }
 
     /// Whether on-disk history is available for the longer dashboard ranges.

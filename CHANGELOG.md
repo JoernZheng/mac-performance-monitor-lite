@@ -6,6 +6,38 @@ Notable changes to Mac Performance Monitor. This project follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Less RAM for the recorder and menu bar**
+  ([#145](https://github.com/Zesty0wl/mac-performance-monitor/issues/145)).
+  Small charts now draw into reusable images. Process rows use small cached
+  icons. In menu-only tests, warm idle memory fell from 152-166 MiB to
+  68-76 MiB. The app still uses more RAM after you open the main window.
+  See the [performance report](docs/performance-budget.md) for test conditions
+  and limits.
+- The app frees unused lists, charts, icons and cached history when you
+  close the last menu or window. It skips this cleanup if you reopen one.
+  Recording, alerts and sample history stay intact.
+- Menu panels no longer rebuild the full process table. Leak scans read
+  one process's history at a time and skip extra raw reads when minute
+  history is enough. Slow scans no longer queue behind each other.
+- Caches for process paths and code-signing details now have fixed limits.
+  They no longer keep growing as you start more processes.
+
+### Fixed
+
+- **The Processes panel no longer expands and shrinks when you select
+  a different process.** It keeps a fixed width inside the window.
+  The table and details no longer overlap. A new selection changes only
+  the contents and scrolls back to the top.
+
+### Added
+
+- The chart benchmark has a `--teardown` option to measure memory after
+  its window closes. It also checks how much more RAM the app can free.
+  New tests cover cleanup, cache limits, charts and the details panel
+  at different window sizes.
+
 ## [2.3.1] - 2026-10-11
 
 ### Fixed

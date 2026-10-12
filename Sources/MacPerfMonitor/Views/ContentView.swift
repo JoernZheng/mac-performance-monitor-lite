@@ -313,7 +313,7 @@ private struct TabGate<Content: View>: View {
 
 /// The Processes tab: the M2/M3 system header above the live process list, with
 /// a detail inspector for the selected row (PRD section 8.3 → 8.4).
-private struct ProcessesTab: View {
+struct ProcessesTab: View {
     @EnvironmentObject private var model: SamplerModel
     @EnvironmentObject private var appState: AppState
     @Binding var selection: ProcessIdentity?
@@ -358,7 +358,6 @@ private struct ProcessesTab: View {
         Group {
             if let selection {
                 ProcessDetailView(identity: selection)
-                    .id(selection)
             } else {
                 ContentUnavailableView(
                     "No process selected",

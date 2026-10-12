@@ -845,7 +845,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate,
                 model.setWindowOpen(false)
                 occlusionReleaseTimer?.invalidate()
                 occlusionReleaseTimer = nil
-                MemoryReclaim.runAfterWindowClose()
                 if mainWindowProcessConsumerActive {
                     mainWindowProcessConsumerActive = false
                     model.removeProcessConsumer()
@@ -855,7 +854,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate,
             // The one-time onboarding window holds no live model subscription,
             // but reclaim its transient allocations so a mid-session replay from
             // Help doesn't leave a footprint bump behind.
-            MainActor.assumeIsolated { MemoryReclaim.runAfterWindowClose() }
+            MainActor.assumeIsolated { model.requestIdleReclaim() }
         }
         // Any window closing might have been the last one. Decide on the next
         // turn of the run loop, once this window has left `NSApp.windows`.

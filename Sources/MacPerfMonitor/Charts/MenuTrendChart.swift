@@ -87,7 +87,7 @@ enum MenuChart {
 /// A compact line + soft-area trend for the menu-bar dropdown headers, drawn on a
 /// fixed, labelled Y axis (gridlines + ticks in a left gutter) so a steady series
 /// reads as a clear flat line at its true level rather than a solid block.
-/// Canvas-drawn, cheap to redraw at 1 Hz. CPU/memory/battery pass a fixed 0–100
+/// Bitmap-backed. CPU/memory/battery pass a fixed 0...100
 /// domain; power passes a rounded auto-peak via `MenuChart.niceUpperBound`.
 struct MenuTrendChart: View {
     var values: [Double]
@@ -103,46 +103,12 @@ struct MenuTrendChart: View {
     var label: (Double) -> String
 
     var body: some View {
-        Canvas { ctx, size in
-            let plot = MenuChart.plotRect(in: size)
-            let lower = domain.lowerBound
-            let span = max(domain.upperBound - lower, 0.0001)
-            func y(_ value: Double) -> CGFloat {
-                let fraction = min(1, max(0, (value - lower) / span))
-                return plot.maxY - CGFloat(fraction) * plot.height
-            }
-
-            // Marked axis: a faint gridline at each tick, labelled in the gutter.
-            for tick in ticks {
-                let ty = y(tick)
-                var grid = Path()
-                grid.move(to: CGPoint(x: plot.minX, y: ty))
-                grid.addLine(to: CGPoint(x: plot.maxX, y: ty))
-                ctx.stroke(grid, with: .color(MenuChart.gridColor), lineWidth: 0.5)
-                ctx.draw(
-                    Text(label(tick)).font(MenuChart.labelFont)
-                        .foregroundColor(MenuChart.labelColor),
-                    at: CGPoint(x: MenuChart.gutter - 4, y: min(max(ty, 5), size.height - 5)),
-                    anchor: .trailing)
-            }
-
-            guard !values.isEmpty else { return }
-            let points = values.enumerated().map { index, value in
-                let x: CGFloat
-                if let sampleCapacity, sampleCapacity > 0 {
-                    let fraction = LiveChartGeometry.normalizedSlot(
-                        index: index, count: values.count, capacity: sampleCapacity)
-                    x = plot.minX + CGFloat(fraction) * plot.width
-                } else {
-                    let step = values.count >= 2 ? plot.width / CGFloat(values.count - 1) : 0
-                    x = plot.minX + CGFloat(index) * step
-                }
-                return CGPoint(x: x, y: y(value))
-            }
-            MenuChart.drawTrend(
-                ctx, points: points, baselineY: plot.maxY, color: color,
-                gradientTop: plot.minY, gradientBottom: plot.maxY)
-        }
+        MenuBitmapChart(
+            model: .init(
+                series: [.init(values: values, color: color)],
+                domain: domain, capacity: sampleCapacity,
+                ticks: ticks, labels: ticks.map(label), gutter: MenuChart.gutter)
+        )
         .accessibilityHidden(true)
     }
 }

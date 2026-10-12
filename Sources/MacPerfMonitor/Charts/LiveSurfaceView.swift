@@ -23,6 +23,7 @@ class LiveSurfaceView: NSView {
     let contentLayer = CALayer()
     private(set) lazy var painter = SurfacePainter(view: self)
     private var installed = false
+    var rasterizesDrawing = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -136,13 +137,31 @@ class LiveSurfaceView: NSView {
 /// a repaint never cross-fades.
 final class SurfacePainter: NSObject, CALayerDelegate {
     unowned let view: LiveSurfaceView
+    private var bitmaps: [ObjectIdentifier: ChartBitmap] = [:]
 
     init(view: LiveSurfaceView) {
         self.view = view
     }
 
     func draw(_ layer: CALayer, in ctx: CGContext) {
-        view.paintLayer(layer, in: ctx)
+        guard view.rasterizesDrawing else {
+            view.paintLayer(layer, in: ctx)
+            return
+        }
+        let key = ObjectIdentifier(layer)
+        if bitmaps[key] == nil { bitmaps[key] = ChartBitmap() }
+        if let image = bitmaps[key]?.render(
+            size: layer.bounds.size, scale: layer.contentsScale, flipped: false,
+            draw: { view.paintLayer(layer, in: $0) })
+        {
+            ctx.saveGState()
+            if ctx.ctm.d < 0 {
+                ctx.translateBy(x: 0, y: layer.bounds.height)
+                ctx.scaleBy(x: 1, y: -1)
+            }
+            ctx.draw(image, in: layer.bounds)
+            ctx.restoreGState()
+        }
     }
 
     func action(for layer: CALayer, forKey event: String) -> CAAction? {

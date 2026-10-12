@@ -26,6 +26,8 @@ import SwiftUI
 ///   --interval  seconds between samples                 (default 0.25)
 ///   --ticks     ticks to measure after warm-up          (default 40)
 ///   --mode      image | host                            (default image)
+///   --teardown  host only: report footprint after releasing the window,
+///               then after allocator relief and a 20-second idle period
 ///
 /// `image` renders each tick through `ImageRenderer`, which exercises the full
 /// Canvas drawing path deterministically. `host` drives an `NSHostingView` in an
@@ -66,6 +68,7 @@ enum ChartBenchmark {
         var interval: TimeInterval = 0.25
         var ticks = 40
         var mode: Mode = .image
+        var teardown = false
         var width: CGFloat = 900
         /// `hardwarePage` only: the rendered page height, so a snapshot can
         /// include cards below the first screenful.
@@ -94,6 +97,7 @@ enum ChartBenchmark {
             if let i = value("--interval").flatMap(Double.init) { interval = i }
             if let t = value("--ticks").flatMap(Int.init) { ticks = t }
             if let m = value("--mode").flatMap(Mode.init(rawValue:)) { mode = m }
+            teardown = arguments.contains("--teardown")
             if let w = value("--width").flatMap(Double.init) { width = CGFloat(w) }
             if let h = value("--height").flatMap(Double.init) { height = CGFloat(h) }
             snapshot = value("--snapshot")
@@ -370,7 +374,7 @@ enum ChartBenchmark {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Group {
                     if let selection {
-                        ProcessDetailView(identity: selection).id(selection)
+                        ProcessDetailView(identity: selection)
                     } else {
                         Color.clear
                     }
@@ -940,7 +944,7 @@ enum ChartBenchmark {
     @MainActor
     final class HostModeRunner {
         let options: Options
-        private var window: NSWindow?
+        private(set) var window: NSWindow?
         private var scenarioTick: (() -> Void)?
         private var timer: Timer?
         private var remaining = 0
@@ -953,23 +957,79 @@ enum ChartBenchmark {
         func run() {
             let app = NSApplication.shared
             app.setActivationPolicy(.prohibited)
-            let scenario = makeScenario(options)
-            scenarioTick = scenario.tick
-            let host = NSHostingView(rootView: scenario.view)
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: options.width, height: 1000),
-                styleMask: [.borderless], backing: .buffered, defer: false)
-            window.contentView = host
-            window.alphaValue = 0
-            window.orderFrontRegardless()
-            self.window = window
-            host.layoutSubtreeIfNeeded()
+            prepareWindow()
             remaining = options.ticks
             timer = Timer.scheduledTimer(withTimeInterval: options.interval, repeats: true) {
                 [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
             }
             app.run()
+        }
+
+        // Keep the scenario and host out of the run() stack frame, which stays
+        // alive inside NSApplication.run() even after the window is released.
+        func prepareWindow() {
+            let scenario = makeScenario(options)
+            scenarioTick = scenario.tick
+            let host = NSHostingView(rootView: scenario.view)
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: options.width, height: 1000),
+                styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.alphaValue = 0
+            window.orderFrontRegardless()
+            self.window = window
+            host.layoutSubtreeIfNeeded()
+        }
+
+        func tearDownWindow() {
+            timer?.invalidate()
+            timer = nil
+            scenarioTick = nil
+            window?.contentView = nil
+            window?.close()
+            window = nil
+        }
+
+        private static func reportFootprint(_ phase: String) {
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(
+                MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+            let result = withUnsafeMutablePointer(to: &info) { pointer in
+                pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+                }
+            }
+            guard result == KERN_SUCCESS else {
+                print("[memory] task_info failed: \(result)")
+                exit(1)
+            }
+            print(
+                String(
+                    format: "[memory] %@ footprint=%.2f MiB", phase,
+                    Double(info.phys_footprint) / 1_048_576))
+            fflush(stdout)
+        }
+
+        private func measureTeardown() {
+            Self.reportFootprint("open")
+            autoreleasepool { tearDownWindow() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                Self.reportFootprint("closed")
+                ProcessIconProvider.shared.purge()
+                DispatchQueue.global(qos: .utility).async {
+                    let freed = malloc_zone_pressure_relief(nil, 0)
+                    DispatchQueue.main.async {
+                        print("[memory] allocator returned \(freed) bytes")
+                        Self.reportFootprint("after-relief")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+                            Self.reportFootprint("idle")
+                            exit(0)
+                        }
+                    }
+                }
+            }
         }
 
         private func tick() {
@@ -988,6 +1048,10 @@ enum ChartBenchmark {
                 report("[host]", options: options, stats: stats)
                 if let path = options.snapshot, let host = window?.contentView {
                     Self.writeSnapshot(of: host, to: path)
+                }
+                if options.teardown {
+                    measureTeardown()
+                    return
                 }
                 exit(0)
             }

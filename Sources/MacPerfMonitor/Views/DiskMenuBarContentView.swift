@@ -118,7 +118,7 @@ struct DiskMenuBarContentView: View {
 
     private func processRow(_ process: ProcessSample) -> some View {
         HStack(spacing: 8) {
-            Image(nsImage: ProcessIconProvider.shared.icon(forPath: process.executablePath))
+            Image(nsImage: ProcessIconProvider.shared.rowIcon(forPath: process.executablePath))
                 .resizable()
                 .frame(width: 16, height: 16)
             Text(process.displayName)
@@ -266,50 +266,17 @@ private struct DiskReadWriteChart: View {
     var sampleCapacity: Int? = nil
 
     var body: some View {
-        Canvas { context, size in
-            let plot = MenuChart.plotRect(in: size, reserveGutter: false)
-            let mid = plot.midY
-            let halfHeight = plot.height / 2
-            let peak = max(read.max() ?? 0, write.max() ?? 0, 1)
-            let upper = peak * 1.2
-
-            var centre = Path()
-            centre.move(to: CGPoint(x: plot.minX, y: mid))
-            centre.addLine(to: CGPoint(x: plot.maxX, y: mid))
-            context.stroke(centre, with: .color(MenuChart.gridColor), lineWidth: 0.5)
-            context.draw(
-                Text(t("%@ peak", ByteFormat.rate(peak))).font(MenuChart.labelFont)
-                    .foregroundColor(MenuChart.labelColor),
-                at: CGPoint(x: plot.minX, y: plot.minY + 4), anchor: .topLeading)
-
-            func points(_ values: [Double], upward: Bool) -> [CGPoint] {
-                return values.enumerated().map { index, value in
-                    let height = CGFloat(min(1, max(0, value / upper))) * halfHeight
-                    let x: CGFloat
-                    if let sampleCapacity, sampleCapacity > 0 {
-                        let fraction = LiveChartGeometry.normalizedSlot(
-                            index: index, count: values.count, capacity: sampleCapacity)
-                        x = plot.minX + CGFloat(fraction) * plot.width
-                    } else {
-                        let step = values.count >= 2 ? plot.width / CGFloat(values.count - 1) : 0
-                        x = plot.minX + CGFloat(index) * step
-                    }
-                    return CGPoint(
-                        x: x,
-                        y: upward ? mid - height : mid + height)
-                }
-            }
-            if !read.isEmpty {
-                MenuChart.drawTrend(
-                    context, points: points(read, upward: true), baselineY: mid,
-                    color: DiskStyle.read, gradientTop: plot.minY, gradientBottom: mid)
-            }
-            if !write.isEmpty {
-                MenuChart.drawTrend(
-                    context, points: points(write, upward: false), baselineY: mid,
-                    color: DiskStyle.write, gradientTop: plot.maxY, gradientBottom: mid)
-            }
-        }
+        let peak = max(read.max() ?? 0, write.max() ?? 0, 1)
+        let upper = peak * 1.2
+        return MenuBitmapChart(
+            model: .init(
+                series: [
+                    .init(values: read, color: DiskStyle.read),
+                    .init(values: write, color: DiskStyle.write, downward: true),
+                ],
+                domain: -upper...upper, capacity: sampleCapacity, ticks: [0],
+                caption: t("%@ peak", ByteFormat.rate(peak)))
+        )
         .accessibilityHidden(true)
     }
 }

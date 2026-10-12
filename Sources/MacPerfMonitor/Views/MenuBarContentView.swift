@@ -181,7 +181,7 @@ struct MenuProcessRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(nsImage: ProcessIconProvider.shared.icon(forPath: process.executablePath))
+            Image(nsImage: ProcessIconProvider.shared.rowIcon(forPath: process.executablePath))
                 .resizable()
                 .frame(width: 16, height: 16)
             // Let the name group take all the free width so long names use the
@@ -200,9 +200,13 @@ struct MenuProcessRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Sparkline(values: trail, sampleCapacity: SamplerModel.processTrailCapacity)
-                .tint(.secondary)
-                .frame(width: 34, height: 14)
+            MenuBitmapChart(
+                model: .init(
+                    series: [.init(values: trail, color: .secondary, smooth: false, fill: false)],
+                    domain: (trail.min() ?? 0)...(trail.max() ?? 0),
+                    capacity: SamplerModel.processTrailCapacity, inset: 0)
+            )
+            .frame(width: 34, height: 14)
             Text(ByteFormat.string(process.physFootprint))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

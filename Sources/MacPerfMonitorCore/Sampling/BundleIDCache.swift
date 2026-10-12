@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Non-`.app` paths return nil without touching the filesystem.
 public struct BundleIDCache {
-    private var cache: [String: String?] = [:]
+    private var cache = BoundedCache<String, String?>()
     private let readPlist: (String) -> String?
 
     public init(
@@ -20,16 +20,16 @@ public struct BundleIDCache {
         guard let path, let appBundlePath = Self.appBundlePath(fromExecutablePath: path) else {
             return nil
         }
-        if let entry = cache.index(forKey: appBundlePath) {
-            return cache[entry].value
+        if let entry = cache.value(forKey: appBundlePath) {
+            return entry
         }
         let id = readPlist(appBundlePath)
-        cache[appBundlePath] = id
+        cache.insert(id, forKey: appBundlePath)
         return id
     }
 
     public mutating func removeAll() {
-        cache.removeAll(keepingCapacity: true)
+        cache.removeAll()
     }
 
     /// `.../Foo.app/Contents/MacOS/Foo` -> `.../Foo.app`. Nil when not inside a bundle.

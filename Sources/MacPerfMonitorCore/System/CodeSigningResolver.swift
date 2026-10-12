@@ -6,7 +6,7 @@ import Security
 /// Signing information is world-readable for system and vendor binaries, so this
 /// reads the signature directly by path — no privileged-helper round-trip. The
 /// inspection (`SecStaticCode…`) is a touch slow, so results are **cached by
-/// path**: a distinct executable is inspected at most once per session. The
+/// path** in bounded LRU caches, including unsigned binaries. The
 /// Sampler only resolves the Team ID when it first sees a process (the
 /// `StaticInfo` cache miss), keeping this off the per-tick hot path.
 ///
@@ -16,10 +16,23 @@ public final class CodeSigningResolver: @unchecked Sendable {
     public static let shared = CodeSigningResolver()
 
     private let lock = NSLock()
-    private var cache: [String: String?] = [:]
-    private var orgCache: [String: String?] = [:]
+    private var cache = BoundedCache<String, String?>()
+    private var orgCache = BoundedCache<String, String?>()
+    private let resolveTeamID: (String) -> String?
+    private let resolveOrganization: (String) -> String?
 
-    public init() {}
+    public init() {
+        resolveTeamID = Self.readTeamID
+        resolveOrganization = Self.readOrganization
+    }
+
+    init(
+        resolveTeamID: @escaping (String) -> String?,
+        resolveOrganization: @escaping (String) -> String?
+    ) {
+        self.resolveTeamID = resolveTeamID
+        self.resolveOrganization = resolveOrganization
+    }
 
     /// The Team Identifier (e.g. "EQHXZ8M8AV") for the binary at `path`, or nil
     /// when the path is empty, the binary is unsigned / ad-hoc signed, or the
@@ -28,16 +41,16 @@ public final class CodeSigningResolver: @unchecked Sendable {
         guard let path, !path.isEmpty else { return nil }
 
         lock.lock()
-        if let cached = cache[path] {
+        if let cached = cache.value(forKey: path) {
             lock.unlock()
             return cached
         }
         lock.unlock()
 
-        let resolved = Self.readTeamID(path: path)
+        let resolved = resolveTeamID(path)
 
         lock.lock()
-        cache[path] = resolved
+        cache.insert(resolved, forKey: path)
         lock.unlock()
         return resolved
     }
@@ -51,16 +64,16 @@ public final class CodeSigningResolver: @unchecked Sendable {
         guard let path, !path.isEmpty else { return nil }
 
         lock.lock()
-        if let cached = orgCache[path] {
+        if let cached = orgCache.value(forKey: path) {
             lock.unlock()
             return cached
         }
         lock.unlock()
 
-        let resolved = Self.readOrganization(path: path)
+        let resolved = resolveOrganization(path)
 
         lock.lock()
-        orgCache[path] = resolved
+        orgCache.insert(resolved, forKey: path)
         lock.unlock()
         return resolved
     }

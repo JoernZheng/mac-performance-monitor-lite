@@ -4,7 +4,7 @@ import MacPerfMonitorCore
 import SwiftUI
 
 @MainActor
-final class CombinedStatusItemController: NSObject {
+final class CombinedStatusItemController: NSObject, NSPopoverDelegate {
     var onPopoverOpened: (() -> Void)?
 
     private static let panelDefaultsKey = "combinedMenuBarPanel"
@@ -226,12 +226,14 @@ final class CombinedStatusItemController: NSObject {
         let popover = popover ?? makePopover()
         self.popover = popover
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        reconcileMenuClock()
         if popover.isShown { onPopoverOpened?() }
         popover.contentViewController?.view.window?.makeKey()
     }
 
     private func makePopover() -> NSPopover {
         let popover = NSPopover()
+        popover.delegate = self
         popover.behavior = .transient
         popover.animates = false
         // Built out here, not inside the `LocaleRootView` closure: that closure is
@@ -326,6 +328,7 @@ final class CombinedStatusItemController: NSObject {
     }
 
     private func popoverActivityChanged(_ active: Bool) {
+        model.setPopoverVisible(active)
         if active {
             replaceActiveConsumer(with: consumerKind(for: currentPanel))
         } else {
@@ -382,5 +385,9 @@ final class CombinedStatusItemController: NSObject {
             self.popover = nil
         }
         reconcileGPUSampling()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        reconcileMenuClock()
     }
 }

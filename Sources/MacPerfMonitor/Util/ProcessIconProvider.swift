@@ -33,9 +33,9 @@ final class ProcessIconProvider {
     /// the Processes tab. A plain bitmap draws immediately, and is rendered
     /// once per executable rather than once per row view.
     func rowIcon(forPath path: String?) -> NSImage {
-        let key = (path ?? "") as NSString
+        let key = iconKey(path)
         if let cached = rowCache.object(forKey: key) { return cached }
-        let source = icon(forPath: path)
+        let source = key.length == 0 ? fallback : resolveIcon(forExecutablePath: key as String)
         let size = NSSize(width: 16, height: 16)
         let image = NSImage(size: size)
         for scale in [1, 2] {
@@ -44,7 +44,10 @@ final class ProcessIconProvider {
                     bitmapDataPlanes: nil, pixelsWide: 16 * scale, pixelsHigh: 16 * scale,
                     bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                     colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
-            else { return source }
+            else {
+                AppLog.ui.error("could not allocate process row icon bitmap")
+                return source
+            }
             rep.size = size
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
@@ -59,11 +62,16 @@ final class ProcessIconProvider {
 
     func icon(forPath path: String?) -> NSImage {
         guard let path, !path.isEmpty else { return fallback }
-        let key = path as NSString
+        let key = iconKey(path)
         if let cached = cache.object(forKey: key) { return cached }
         let image = resolveIcon(forExecutablePath: path)
         cache.setObject(image, forKey: key)
         return image
+    }
+
+    private func iconKey(_ path: String?) -> NSString {
+        guard let path else { return "" }
+        return (enclosingAppBundlePath(path) ?? path) as NSString
     }
 
     /// Resolve the best icon for a process's executable path. When the
@@ -98,7 +106,7 @@ final class ProcessIconProvider {
         return NSString.path(withComponents: Array(components[0...index]))
     }
 
-    /// Drops all cached icons. Called when the main window closes so the icons
+    /// Drops all cached icons. Called when the last live consumer closes so the icons
     /// pulled in to render the process list do not linger while the app sits
     /// idle in the menubar.
     func purge() {

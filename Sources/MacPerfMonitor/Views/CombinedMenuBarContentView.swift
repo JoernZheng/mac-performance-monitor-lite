@@ -173,7 +173,7 @@ struct CombinedMenuBarContentView: View {
         switch selection.panel {
         case .alerts:
             AlertsMenuBarContentView(
-                alerts: model.activeAlerts, processes: model.displayProcesses,
+                alerts: model.activeAlerts, processes: model.latest?.processes ?? [],
                 observations: model.alertObservations,
                 inspectAlert: { alert in
                     guard let request = AlertInvestigation(alerts: [alert]) else { return }

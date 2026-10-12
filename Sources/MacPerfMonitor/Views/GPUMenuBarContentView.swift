@@ -1,5 +1,4 @@
 import AppKit
-import Charts
 import MacPerfMonitorCore
 import SwiftUI
 
@@ -107,7 +106,7 @@ struct ANEMenuCharts: View {
             .frame(height: 17)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            TrendSnapshotChart(model: chart)
+            TrendSnapshotChart(model: chart, rasterizesDrawing: true)
                 .frame(height: 62)
                 .overlay {
                     if !chart.series.contains(where: {
@@ -213,23 +212,18 @@ struct GPUMenuBarContentView: View {
     }
 
     private var sparkline: some View {
-        let points = Array(model.gpuUtilizationHistory.enumerated())
-        let capacity = SamplerModel.gpuHistoryCapacity
-        return Chart(points, id: \.offset) { point in
-            let x = LiveChartGeometry.normalizedSlot(
-                index: point.offset, count: points.count, capacity: capacity)
-            AreaMark(x: .value("t", x), y: .value("u", point.element))
-                .foregroundStyle(Color.accentColor.opacity(0.18))
-            LineMark(x: .value("t", x), y: .value("u", point.element))
-                .foregroundStyle(Color.accentColor)
-                .interpolationMethod(.linear)
-        }
-        .chartYScale(domain: 0...100)
-        .chartXScale(domain: 0...1)
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
+        let values = model.gpuUtilizationHistory
+        return MenuBitmapChart(
+            model: .init(
+                series: [
+                    .init(values: values, color: .accentColor, smooth: false, gradient: false)
+                ],
+                domain: 0...100, capacity: SamplerModel.gpuHistoryCapacity, inset: 0,
+                accessibilityLabel: t("GPU"),
+                accessibilityValue: values.last.map { "\(Int($0.rounded()))%" } ?? "--")
+        )
         .frame(height: 38)
-        .opacity(points.count > 1 ? 1 : 0)
+        .opacity(values.count > 1 ? 1 : 0)
     }
 
     // MARK: - Activity bars
@@ -346,7 +340,7 @@ struct GPUMenuProcessRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(nsImage: ProcessIconProvider.shared.icon(forPath: process.executablePath))
+            Image(nsImage: ProcessIconProvider.shared.rowIcon(forPath: process.executablePath))
                 .resizable()
                 .frame(width: 16, height: 16)
             HStack(spacing: 5) {

@@ -118,6 +118,7 @@ final class MetricCardPresentationTests: XCTestCase {
             for chart in [timeChart, powerChart] {
                 XCTAssertEqual(chart.bounds.height, 62, accuracy: 1)
                 XCTAssertTrue(chart.scrubbable)
+                XCTAssertTrue(chart.rasterizesDrawing)
                 XCTAssertTrue(host.bounds.contains(chart.convert(chart.bounds, to: host)))
             }
             let timeValues = try XCTUnwrap(timeChart.feed?.model.series.first?.column.values)

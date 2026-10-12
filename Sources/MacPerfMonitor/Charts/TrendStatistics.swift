@@ -47,10 +47,12 @@ enum TrendStatistics {
 
 struct TrendSnapshotChart: NSViewRepresentable {
     let model: TrendModel
+    var rasterizesDrawing = false
     var onActivate: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> TrendSurfaceView {
         let surface = TrendSurfaceView()
+        surface.rasterizesDrawing = rasterizesDrawing
         surface.scrubbable = true
         surface.onActivate = onActivate
         let feed = TrendFeed()
@@ -61,6 +63,7 @@ struct TrendSnapshotChart: NSViewRepresentable {
 
     func updateNSView(_ view: TrendSurfaceView, context: Context) {
         view.onActivate = onActivate
+        view.rasterizesDrawing = rasterizesDrawing
         view.feed?.publish(model, replacingHistory: true)
     }
 

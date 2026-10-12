@@ -789,6 +789,7 @@ public final class Sampler {
         lastDisk.removeAll()
         staticCache.removeAll()
         bundleIDCache.removeAll()
+        codeSigningResolver.reset()
         lastSystemTime = nil
         lastProcessTime = nil
         lastCounters = nil
