@@ -221,8 +221,7 @@ public final class DiskReader {
             writeRetries: number(stats, kIOBlockStorageDriverStatisticsWriteRetriesKey))
     }
 
-    /// Internal (not private) so `DiskInfoReader` walks the identical chain and
-    /// the two readers can never disagree about which media a driver owns.
+    /// Resolve the physical whole-media entry owned by this storage driver.
     static func immediateWholeMedia(of driver: io_registry_entry_t) -> io_registry_entry_t? {
         var iterator: io_iterator_t = 0
         guard

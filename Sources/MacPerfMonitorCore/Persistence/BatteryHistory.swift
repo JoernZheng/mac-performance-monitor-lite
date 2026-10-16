@@ -10,27 +10,19 @@ public enum BatteryHistoryMetric: String, CaseIterable, Sendable {
     var column: String { "energy_" + rawValue }
 }
 
-public struct BatteryHistoryPoint: Identifiable, Equatable, Sendable {
+private struct BatteryHistoryValues {
     public enum PowerState: String, Sendable {
         case battery, charging, adapter, noBattery
     }
 
-    public var date: Date
     public var observedAt: Date
-    public var duration: TimeInterval
     public var batteryID: String?
     public var state: PowerState?
     public var estimateSource: BatteryRuntimeEstimate.Source?
     public var values: [BatteryHistoryMetric: Double]
-    public var minima: [BatteryHistoryMetric: Double]
-    public var maxima: [BatteryHistoryMetric: Double]
-    public var counts: [BatteryHistoryMetric: Double]
-    public var id: Date { date }
 
     public init(sample: BatterySample) {
-        date = sample.timestamp
         observedAt = sample.timestamp
-        duration = 0
         batteryID = sample.isPresent ? BatteryIdentity.identifier(for: sample.serialNumber) : nil
         state =
             !sample.isPresent
@@ -63,69 +55,8 @@ public struct BatteryHistoryPoint: Identifiable, Equatable, Sendable {
             }
         }
         values = values.filter { $0.value.isFinite }
-        minima = values
-        maxima = values
-        counts = values.mapValues { _ in 1 }
     }
 
-    init(row: Row, duration: TimeInterval) {
-        date = Date(timeIntervalSince1970: row["energy_date"])
-        observedAt = Date(
-            timeIntervalSince1970: (row["energy_observed_at"] as Double?) ?? row["energy_date"])
-        self.duration = duration
-        batteryID = row["energy_battery_id"]
-        state = (row["energy_state"] as String?).flatMap(PowerState.init(rawValue:))
-        estimateSource = (row["energy_estimate_source"] as String?).flatMap(
-            BatteryRuntimeEstimate.Source.init(rawValue:))
-        values = [:]
-        minima = [:]
-        maxima = [:]
-        counts = [:]
-        for metric in BatteryHistoryMetric.allCases {
-            if let value = row[metric.column] as Double?, value.isFinite {
-                values[metric] = value
-                minima[metric] = duration == 0 ? value : row[metric.column + "_min"]
-                maxima[metric] = duration == 0 ? value : row[metric.column + "_max"]
-                counts[metric] = duration == 0 ? 1 : row[metric.column + "_samples"]
-            }
-        }
-        if row["energy_observed_at"] as Double? == nil {
-            for (metric, column) in [
-                (BatteryHistoryMetric.charge, "legacy_charge"),
-                (.temperature, "legacy_temperature"),
-            ] {
-                guard let value = row[column] as Double?, value.isFinite else { continue }
-                if metric == .charge, !(0...100).contains(value) { continue }
-                if metric == .temperature, value <= 0 { continue }
-                values[metric] = value
-                if duration == 0 {
-                    minima[metric] = value
-                    maxima[metric] = value
-                    counts[metric] = 1
-                }
-            }
-        }
-    }
-}
-
-public struct BatteryDailyPoint: Identifiable, Equatable, Sendable {
-    public var date: Date
-    public var healthPercent: Double?
-    public var cycleCount: Int?
-    public var fullCapacitymAh: Int?
-    public var designCapacitymAh: Int?
-    public var id: Date { date }
-
-    public init(
-        date: Date, healthPercent: Double? = nil, cycleCount: Int? = nil,
-        fullCapacitymAh: Int? = nil, designCapacitymAh: Int? = nil
-    ) {
-        self.date = date
-        self.healthPercent = healthPercent
-        self.cycleCount = cycleCount
-        self.fullCapacitymAh = fullCapacitymAh
-        self.designCapacitymAh = designCapacitymAh
-    }
 }
 
 public enum BatteryIdentity {
@@ -139,10 +70,6 @@ public enum BatteryIdentity {
 }
 
 extension SampleStore {
-    public func recordDailyBattery(_ battery: BatterySample) throws {
-        try databasePool.write { db in try Self.recordDailyBattery(battery, db: db) }
-    }
-
     static func recordDailyBattery(_ battery: BatterySample, db: Database) throws {
         guard battery.isPresent,
             let identifier = BatteryIdentity.identifier(for: battery.serialNumber)
@@ -181,7 +108,7 @@ extension SampleStore {
             sample.timestamp <= timestamp,
             timestamp.timeIntervalSince(sample.timestamp) <= 60
         else { return }
-        let point = BatteryHistoryPoint(sample: sample)
+        let point = BatteryHistoryValues(sample: sample)
         let metrics = BatteryHistoryMetric.allCases
         let assignments = metrics.map { "\($0.column) = ?" }.joined(separator: ", ")
         var arguments: [any DatabaseValueConvertible] = [
@@ -198,65 +125,6 @@ extension SampleStore {
                 """
         ).execute(arguments: StatementArguments(arguments))
         try recordDailyBattery(sample, db: db)
-    }
-
-    public func batteryHistory(
-        _ window: HistoryWindow, now: Date = Date()
-    ) throws -> [BatteryHistoryPoint] {
-        let since = now.addingTimeInterval(-window.seconds).timeIntervalSince1970
-        let until = now.timeIntervalSince1970
-        guard since.isFinite, until.isFinite else { return [] }
-        return try databasePool.read { db in
-            var points: [BatteryHistoryPoint] = []
-            let minuteWidth = try Retention.meta(db, "minute_bucket_seconds") ?? 60
-            var lower = since
-            func read(_ table: String, duration: Double, through end: Double) throws {
-                guard lower <= end else { return }
-                let timeColumn = duration == 0 ? "timestamp" : "bucket"
-                let metrics = BatteryHistoryMetric.allCases.flatMap { metric in
-                    duration == 0
-                        ? [metric.column]
-                        : [
-                            metric.column, metric.column + "_min", metric.column + "_max",
-                            metric.column + "_samples",
-                        ]
-                }.joined(separator: ", ")
-                let width = duration == 0 ? "0" : "COALESCE(bucket_seconds, \(duration))"
-                let legacy =
-                    duration == 0
-                    ? "CASE WHEN battery_present = 1 THEN battery_charge END AS legacy_charge, CASE WHEN battery_present = 1 THEN battery_temp END AS legacy_temperature"
-                    : "CASE WHEN battery_health_avg > 0 THEN battery_charge_avg END AS legacy_charge, CASE WHEN battery_health_avg > 0 THEN battery_temp_avg END AS legacy_temperature"
-                let rows = try Row.fetchAll(
-                    db,
-                    sql: """
-                        SELECT \(timeColumn) AS energy_date, energy_observed_at, energy_battery_id,
-                            energy_state, energy_estimate_source, \(width) AS energy_duration, \(metrics), \(legacy)
-                        FROM \(table) WHERE \(timeColumn) >= ? AND \(timeColumn) <= ?
-                        ORDER BY \(timeColumn)
-                        """, arguments: [lower, end])
-                points += rows.map { BatteryHistoryPoint(row: $0, duration: $0["energy_duration"]) }
-            }
-            if window.granularity == .hour {
-                lower -= 3600
-                let watermark = try Retention.meta(db, "hour_watermark") ?? since
-                try read("system_hour", duration: 3600, through: min(until, watermark.nextDown))
-                lower = max(since, watermark)
-            }
-            if window.granularity != .raw {
-                if window.granularity == .minute {
-                    lower =
-                        try Double.fetchOne(
-                            db, sql: "SELECT MAX(bucket) FROM system_minute WHERE bucket < ?",
-                            arguments: [since]) ?? since
-                }
-                let watermark = try Retention.meta(db, "minute_watermark") ?? since
-                try read(
-                    "system_minute", duration: minuteWidth, through: min(until, watermark.nextDown))
-                lower = max(since, watermark)
-            }
-            try read("system_samples", duration: 0, through: until)
-            return points.filter { $0.date.timeIntervalSince1970 + $0.duration >= since }
-        }
     }
 
     static func rollBatteryHistory(
@@ -305,26 +173,4 @@ extension SampleStore {
                 """, arguments: [since, until])
     }
 
-    public func batteryDailyHistory(
-        for identifier: String, since: Date? = nil, through: Date = Date()
-    ) throws -> [BatteryDailyPoint] {
-        guard through.timeIntervalSince1970.isFinite else { return [] }
-        let lower = since?.timeIntervalSince1970 ?? 0
-        guard lower.isFinite, lower <= through.timeIntervalSince1970 else { return [] }
-        return try databasePool.read { db in
-            try Row.fetchAll(
-                db,
-                sql: """
-                    SELECT observed_at, health_percent, cycle_count, full_capacity_mah, design_capacity_mah
-                    FROM battery_daily
-                    WHERE battery_id = ? AND observed_at >= ? AND observed_at <= ?
-                    ORDER BY day ASC
-                    """, arguments: [identifier, lower, through.timeIntervalSince1970]
-            ).map { row in
-                BatteryDailyPoint(
-                    date: Date(timeIntervalSince1970: row[0]), healthPercent: row[1],
-                    cycleCount: row[2], fullCapacitymAh: row[3], designCapacitymAh: row[4])
-            }
-        }
-    }
 }

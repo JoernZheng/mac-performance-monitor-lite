@@ -1,27 +1,32 @@
-# Developing Mac Performance Monitor Lite
+# Development
 
-This project is a headless performance recorder. The accepted scope is all available
-performance metric families, native macOS memory pressure, activity classification,
-local persistence and read-only command-line analysis. See README.md and
-`docs/personal-recorder-design.md` before changing collection or statistical semantics.
+Maintain Lite independently on `main` and preserve the upstream MIT license.
+Use an isolated checkout, inspect the diff and preserve unrelated changes.
 
-The authoritative development branch is `main`; maintain Lite independently of
-the original project. Use an isolated checkout for changes and preserve the MIT license.
-Do not restore the upstream updater, app identity, data directory, or GUI dependencies.
-Missing values must remain distinguishable from zero, and gaps must not become idle
-or normal-pressure coverage. Activity classes are estimates, not verified work records.
+## Modules
 
-Validation:
+- `CMacPerfMonitor`: C access to macOS process and kernel APIs.
+- `MacPerfMonitorCore`: metric readers, sampling, SQLite writes and retention.
+- `RecorderKit`: background lifecycle, activity/coverage, service management and queries.
+- `mpml`: command parsing and output.
+
+There is no hosted CI or required Git hook. Run these checks locally:
 
 ```sh
 Scripts/build.sh
 Scripts/test.sh
 swift format lint --strict --recursive Sources Tests Package.swift
+bash -n Scripts/*.sh
 git diff --check
 ```
 
-Use a temporary database for bounded live captures. Do not install login startup,
-replace an installed service, or collect indefinitely as a side effect of a build
-or test. Installation is a separate explicit action. Never commit live history,
-exports or logs. Source review and tests do not establish a long-duration performance
-or security guarantee. Commit and push permissions remain separate.
+Use temporary databases for bounded captures. Service tests use an isolated home
+and a fake launchd backend. Building or testing must not enable login startup,
+replace a running recorder, or touch live history. Installation is an explicit action.
+
+Keep missing readings distinct from zero, and never turn collection gaps into idle
+or normal-pressure time. Preserve database and service IDs across upgrades. Retain
+all supported metric families; this project has no UI, scanning or cleanup tools.
+
+Keep credentials, databases, logs, exports and machine-specific notes out of Git.
+Commit and push permissions remain separate.

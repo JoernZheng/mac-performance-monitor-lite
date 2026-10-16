@@ -1,9 +1,6 @@
 import Foundation
 
-/// Computes the continuous 0...100 pressure index that is MacPerfMonitor's North Star
-/// metric. The full derivation and rationale live in docs/pressure-index.md;
-/// the formula is reproduced here in comments so it is auditable at the call
-/// site (and, being open source, it will be audited).
+/// Legacy custom index, independent of the native pressure state. See docs/metrics.md.
 public enum PressureIndex {
     /// Each discrete level owns a 33-wide band; continuous signals position the
     /// index within the band so the chart glides instead of stepping.

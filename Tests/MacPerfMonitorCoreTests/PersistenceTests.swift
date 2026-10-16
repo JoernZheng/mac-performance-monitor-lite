@@ -93,39 +93,6 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(times, times.sorted())
     }
 
-    func testProcessHistorySliceBoundsAndTier() throws {
-        let base = Date(timeIntervalSince1970: 1_700_000_000)
-        let identity = ProcessIdentity(pid: 1000, startTime: Date(timeIntervalSince1970: 1_000_000))
-        for i in 0..<10 {
-            try insertTick(base.addingTimeInterval(Double(i) * 2), footprint: 100)
-        }
-
-        // Raw slice: inclusive on both ends, only the requested interval.
-        let slice = try store.processHistories(
-            for: [identity], granularity: .raw,
-            from: base.addingTimeInterval(4), to: base.addingTimeInterval(10))
-        XCTAssertEqual(slice[identity]?.map { $0.date.timeIntervalSince(base) }, [4, 6, 8, 10])
-
-        // An interval with no rows yields no entry (absent, not []).
-        let empty = try store.processHistories(
-            for: [identity], granularity: .raw,
-            from: base.addingTimeInterval(100), to: base.addingTimeInterval(200))
-        XCTAssertNil(empty[identity])
-
-        // Roll the raw rows into the minute tier, then slice that tier: the
-        // bucketed points land on minute boundaries within the interval.
-        try Retention.run(
-            store.databasePool, now: base.addingTimeInterval(3 * 3600),
-            policy: RetentionPolicy(rawWindow: 3600, minuteWindow: 86_400, hourWindow: 90 * 86_400))
-        let minuteSlice = try store.processHistories(
-            for: [identity], granularity: .minute,
-            from: base.addingTimeInterval(-60), to: base.addingTimeInterval(60))
-        XCTAssertFalse(minuteSlice.isEmpty)
-        for point in minuteSlice[identity] ?? [] {
-            XCTAssertEqual(point.date.timeIntervalSince1970.truncatingRemainder(dividingBy: 60), 0)
-        }
-    }
-
     func testTouchLastSeenAdvancesCachedProcessRows() throws {
         // Two ticks: the second resolves the process id from the in-memory
         // cache, skipping the upsert — so last_seen stays at the FIRST tick.

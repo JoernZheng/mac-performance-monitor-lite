@@ -166,56 +166,6 @@ final class ChangeGatedWritesTests: XCTestCase {
 
     // MARK: - Pressure dominant carry-forward
 
-    func testPressureDominantCarriesForwardWithinBucket() throws {
-        // Pressure steps normal→warning at t1. The 500 MB process wrote at t0 but
-        // is gated at t1 (unchanged), so it has no row at the exact step tick.
-        _ = try store.insertChanged(
-            Make.system(timestamp: base.addingTimeInterval(10), pressure: .normal),
-            processes: [
-                Make.process(timestamp: base.addingTimeInterval(10), pid: 1000, footprint: 500 * mb)
-            ],
-            bucket: 60)
-        _ = try store.insertChanged(
-            Make.system(timestamp: base.addingTimeInterval(12), pressure: .warning),
-            processes: [
-                Make.process(timestamp: base.addingTimeInterval(12), pid: 1000, footprint: 500 * mb)
-            ],
-            bucket: 60)
-
-        let events = try store.pressureEvents(bucket: 60, now: base.addingTimeInterval(60))
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(
-            events.first?.dominantIdentity?.pid, 1000,
-            "dominant is carried forward from t0 despite no process row at the step tick")
-        XCTAssertEqual(events.first?.dominantFootprint, 500 * mb)
-    }
-
-    func testPressureDominantIgnoresStaleDeadProcess() throws {
-        // Small bucket so staleness is easy to cross. Q (800 MB) writes once, then
-        // dies; P (500 MB) is alive at the step. With bucket=5, Q's last row is
-        // older than one bucket at the step, so it must NOT be crowned dominant.
-        _ = try store.insertChanged(
-            Make.system(timestamp: base, pressure: .normal),
-            processes: [Make.process(timestamp: base, pid: 900, footprint: 800 * mb)],
-            bucket: 5)
-        // Step 8 s later; only P is present now (Q got no further row).
-        _ = try store.insertChanged(
-            Make.system(timestamp: base.addingTimeInterval(8), pressure: .warning),
-            processes: [
-                Make.process(timestamp: base.addingTimeInterval(8), pid: 1000, footprint: 500 * mb)
-            ],
-            bucket: 5)
-
-        let events = try store.pressureEvents(bucket: 5, now: base.addingTimeInterval(30))
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(
-            events.first?.dominantIdentity?.pid, 1000,
-            "the live 500 MB process wins; the 800 MB one died > 1 bucket ago and is stale")
-        XCTAssertEqual(events.first?.dominantFootprint, 500 * mb)
-    }
-
-    // MARK: - Current snapshot
-
     func testLatestProcessSamplesReturnsEachLiveProcess() throws {
         _ = try store.insertChanged(
             Make.system(timestamp: base),

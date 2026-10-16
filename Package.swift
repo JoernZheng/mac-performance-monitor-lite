@@ -3,7 +3,6 @@ import PackageDescription
 
 let package = Package(
     name: "MacPerformanceMonitorLite",
-    defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "mpml", targets: ["mpml"]),
