@@ -938,6 +938,7 @@ public final class Sampler {
         )
         sample.swapSampleValid = swap != nil
         sample.pressureSampleValid = pressureReading != nil
+        sample.vmSampleValid = vm != nil
         sample.swapInBytesPerSecond = activity?.rateIn
         sample.swapOutBytesPerSecond = activity?.rateOut
         sample.swapInPagesDelta = activity?.pagesIn

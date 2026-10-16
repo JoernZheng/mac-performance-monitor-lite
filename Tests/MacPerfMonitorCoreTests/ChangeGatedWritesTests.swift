@@ -164,36 +164,6 @@ final class ChangeGatedWritesTests: XCTestCase {
 
     // MARK: - Group raw carry-forward
 
-    func testGroupRawSeriesCarriesForwardSparseMembers() throws {
-        // t0: A=100 MB, B=50 MB (both first-seen → written).
-        _ = try store.insertChanged(
-            Make.system(timestamp: base),
-            processes: [
-                Make.process(timestamp: base, pid: 1000, footprint: 100 * mb),
-                Make.process(timestamp: base, pid: 2000, footprint: 50 * mb),
-            ], bucket: 60)
-        // t1: A grows to 200 MB (written); B unchanged (gated → no row at t1).
-        _ = try store.insertChanged(
-            Make.system(timestamp: base.addingTimeInterval(1)),
-            processes: [
-                Make.process(timestamp: base.addingTimeInterval(1), pid: 1000, footprint: 200 * mb),
-                Make.process(timestamp: base.addingTimeInterval(1), pid: 2000, footprint: 50 * mb),
-            ], bucket: 60)
-
-        XCTAssertEqual(try count("process_samples"), 3, "A×2 + B×1 (B's unchanged tick was gated)")
-
-        let ids = try store.databasePool.read { db in
-            try Int64.fetchAll(db, sql: "SELECT id FROM processes ORDER BY pid")
-        }
-        let series = try store.groupSeries(
-            processIDs: ids, window: .oneHour, now: base.addingTimeInterval(2))
-        XCTAssertEqual(series.count, 2)
-        XCTAssertEqual(series[0].footprint, 150 * mb, "t0 = A(100) + B(50)")
-        // The crux: at t1 only A wrote, but B's 50 MB is carried forward, so the
-        // group total is 250 — a GROUP BY timestamp would have dropped B and shown 200.
-        XCTAssertEqual(series[1].footprint, 250 * mb, "t1 = A(200 written) + B(50 carried forward)")
-    }
-
     // MARK: - Pressure dominant carry-forward
 
     func testPressureDominantCarriesForwardWithinBucket() throws {

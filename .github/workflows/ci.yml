@@ -1,78 +1,15 @@
-name: CI
-
-# Build, test, and lint on every push and pull request. This workflow uses no
-# secrets and does no code signing, so any contributor can fork the repository
-# and get green CI out of the box.
-
+name: Recorder CI
 on:
   push:
-    branches: [main, 2.0.0]
+    branches: [main]
   pull_request:
-
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-test-lint:
-    name: Build, test, lint (${{ matrix.runner }})
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-15, xcode-27]
-    runs-on: ${{ matrix.runner }}
+  recorder:
+    runs-on: macos-15
     steps:
-      - name: Check out
-        uses: actions/checkout@v4
-
-      - name: Show toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-
-      - name: Verify AI build toolchain
-        if: matrix.runner == 'xcode-27'
-        run: xcodebuild -version | grep -E '^Xcode 27([.]|$)'
-
-      - name: Cache SwiftPM build
-        uses: actions/cache@v4
-        with:
-          path: .build
-          key: spm-${{ matrix.runner }}-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
-          restore-keys: |
-            spm-${{ matrix.runner }}-${{ runner.arch }}-
-
-      - name: Build
-        run: swift build
-
-      - name: Test
-        run: swift test
-
-      - name: Lint
-        run: swift format lint --strict --recursive Sources Tests Package.swift
-
-      - name: Check localization
-        run: Scripts/check-localization.py
-
-      # Compile the String Catalog with Apple's own tool. check-localization.py
-      # validates the JSON we care about, but only xcstringstool will reject a
-      # malformed plural variation or an unusable language code, and a
-      # translator's pull request should fail here rather than at release time.
-      - name: Compile the String Catalog
-        run: |
-          xcrun xcstringstool compile Localizations/Localizable.xcstrings \
-            --output-directory "$RUNNER_TEMP/lproj"
-          ls -1 "$RUNNER_TEMP/lproj"
-
-      # Ask the compiler which keys the interface actually looks up, and fail
-      # when one of them is not in the catalog. check-localization.py scans
-      # source text, which cannot see the key SwiftUI builds from an
-      # interpolated literal: Text("\(count) inside") looks up "%lld inside".
-      # This rebuilds with -emit-localized-strings, so it is the slow check and
-      # runs last.
-      - name: Check string coverage
-        run: Scripts/check-string-coverage.py
-
+      - uses: actions/checkout@v4
+      - run: Scripts/build.sh
+      - run: Scripts/test.sh
+      - run: swift format lint --strict --recursive Sources Tests Package.swift

@@ -1,49 +1,36 @@
-# Build products
+# Build products and editor state
 .build/
 build/
 *.o
 *.swiftmodule
-
-# Xcode (we do not use the GUI, but ignore its droppings anyway)
 *.xcodeproj/
 *.xcworkspace/
 xcuserdata/
 DerivedData/
-
-# macOS
 .DS_Store
-
-# Local Claude Code config / skills (maintainer tooling — not shipped publicly)
 .claude/
-
-# SwiftPM
 .swiftpm/
 Package.resolved.bak
-
-# Local data / scratch
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
-/tmp-macperfmonitor/
-
-# Sparkle EdDSA private key backup (the live key lives in the login keychain)
-secrets/
-
-# Local Sparkle update archive + generated appcast (mirrored to the update server)
 dist/
+*.lproj/
 
-# Catalog (diagnostic check) signing private key — keep local, never commit
-catalog-signing.pem
-
-# Local deploy config. The on-disk file may still hold private infrastructure
-# (real host + remote paths from the legacy rsync publish path) — never commit it.
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p8
+*.p12
 Scripts/deploy.env
 
-# NOTE: checks/ and glossary/ are now TRACKED. The signed manifest.json / glossary.json
-# and their .sig files are committed and served to clients from raw.githubusercontent.com
-# (see Scripts/publishChecks.sh, Scripts/publishGlossary.sh). The private signing key
-# (catalog-signing.pem, above) is never committed.
-docs/reddit-post-macosapps.md
-
-# Compiled localization output (built from Localizations/Localizable.xcstrings)
-*.lproj/
+# Live history, exports and machine-specific evidence
+*.sqlite*
+*.log
+*.jsonl
+exports/
+diagnostics/
+local-validation/
+/tmp-macperfmonitor/
+docs/installation-and-overhead.md

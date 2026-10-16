@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Security report
-    url: https://github.com/Zesty0wl/mac-performance-monitor/security/advisories/new
-    about: Please report security vulnerabilities privately, not as a public issue. See SECURITY.md.
-  - name: Question or discussion
-    url: https://github.com/Zesty0wl/mac-performance-monitor/discussions
-    about: Ask questions and discuss ideas with the community.
+  - name: Security and privacy policy
+    url: https://github.com/JoernZheng/mac-performance-monitor-lite/blob/codex/lite/SECURITY.md
+    about: Read the policy before reporting sensitive information.
+  - name: Lite documentation
+    url: https://github.com/JoernZheng/mac-performance-monitor-lite/tree/codex/lite
+    about: Usage, supported metrics and installation instructions.

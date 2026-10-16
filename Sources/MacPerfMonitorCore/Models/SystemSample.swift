@@ -22,6 +22,7 @@ public struct SystemSample: Sendable, Codable {
     public var swapUsed: UInt64
     public var swapSampleValid: Bool?
     public var pressureSampleValid: Bool?
+    public var vmSampleValid: Bool? = nil
     public var swapInBytesPerSecond: Double?
     public var swapOutBytesPerSecond: Double?
     public var swapInPagesDelta: UInt64?

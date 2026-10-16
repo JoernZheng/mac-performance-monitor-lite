@@ -4,7 +4,7 @@ import Foundation
 /// counters. This is deliberately separate from per-process disk accounting:
 /// device traffic and task-attributed traffic are related, but do not reconcile
 /// exactly across filesystem caching, metadata, paging, and kernel work.
-public struct DiskSample: Sendable, Equatable {
+public struct DiskSample: Sendable, Codable, Equatable {
     public var timestamp: Date
     public var readBytesPerSec: Double
     public var writeBytesPerSec: Double
@@ -47,7 +47,7 @@ public struct DiskSample: Sendable, Equatable {
 /// One real internal or external disk. Virtual block devices such as mounted
 /// disk images are excluded by `DiskReader` because their backing traffic is
 /// already counted by the physical device underneath them.
-public struct DiskDeviceSample: Sendable, Equatable, Identifiable {
+public struct DiskDeviceSample: Sendable, Codable, Equatable, Identifiable {
     public var id: UInt64 { registryEntryID }
     public var registryEntryID: UInt64
     public var bsdName: String

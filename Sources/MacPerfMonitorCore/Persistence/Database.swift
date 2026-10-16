@@ -4,16 +4,15 @@ import GRDB
 /// Opens and migrates the MacPerfMonitor SQLite database (via GRDB) and vends the
 /// shared `DatabasePool`.
 public enum MacPerfMonitorDatabase {
-    /// Default on-disk location: ~/Library/Application Support/MacPerformanceMonitor/macperfmonitor.sqlite
+    /// Default on-disk location: ~/Library/Application Support/MacPerformanceRecorder/history.sqlite
     public static func defaultURL() -> URL {
         let base =
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        // Full product name to share one Application Support directory with the
-        // licensing layer (LicensePaths also uses "MacPerformanceMonitor").
-        let dir = base.appendingPathComponent("MacPerformanceMonitor", isDirectory: true)
+        // The headless fork has its own data directory.
+        let dir = base.appendingPathComponent("MacPerformanceRecorder", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("macperfmonitor.sqlite")
+        return dir.appendingPathComponent("history.sqlite")
     }
 
     /// Open a pool at `url` (or in-memory when `url` is nil), running migrations.
@@ -57,8 +56,10 @@ public enum MacPerfMonitorDatabase {
             try AgentViews.install(db)
             try AgentViews.recordMacFacts(
                 db, cpuCores: ProcessInfo.processInfo.processorCount,
-                performanceCores: AgentGuide.sysctlInt("hw.perflevel0.logicalcpu") ?? 0,
-                efficiencyCores: AgentGuide.sysctlInt("hw.perflevel1.logicalcpu") ?? 0,
+                performanceCores: Sysctl.integer("hw.perflevel0.logicalcpu", as: Int32.self).map(
+                    Int.init) ?? 0,
+                efficiencyCores: Sysctl.integer("hw.perflevel1.logicalcpu", as: Int32.self).map(
+                    Int.init) ?? 0,
                 memoryBytes: ProcessInfo.processInfo.physicalMemory)
         }
         try? ensureIncrementalAutoVacuum(pool)

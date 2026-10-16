@@ -54,6 +54,7 @@ public final class NetworkProcessReader {
     }
 
     private let lock = NSLock()
+    private let refreshInterval: TimeInterval
     private var wantRunning = false
     /// Previous cumulative counters and when they were sampled, to difference the
     /// next snapshot into rates.
@@ -61,13 +62,16 @@ public final class NetworkProcessReader {
     private var prevAt: Date?
     /// Latest per-PID byte rates (bytes/sec), read non-blocking by the sampler.
     private var ratesCache: [Int32: Double] = [:]
+    private var rateTimestamp: Date?
 
     /// Dedicated background queue so the nettop one-shot never runs on the sampler's
     /// hot path.
     private let refreshQueue = DispatchQueue(
         label: "uk.co.bzwrd.macperfmonitor.nettop", qos: .utility)
 
-    public init() {}
+    public init(refreshInterval: TimeInterval = 2) {
+        self.refreshInterval = max(2, refreshInterval)
+    }
 
     /// Enable per-app sampling and start the background refresh loop. Idempotent.
     public func start() {
@@ -87,6 +91,7 @@ public final class NetworkProcessReader {
         prevCounters.removeAll()
         prevAt = nil
         ratesCache.removeAll()
+        rateTimestamp = nil
         lock.unlock()
     }
 
@@ -96,6 +101,12 @@ public final class NetworkProcessReader {
         lock.lock()
         defer { lock.unlock() }
         return ratesCache
+    }
+
+    public func latestSampleTime() -> Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return rateTimestamp
     }
 
     // MARK: - Background refresh
@@ -130,6 +141,7 @@ public final class NetworkProcessReader {
                         if total > 0 { rates[pid] = Double(total) / dt }
                     }
                     ratesCache = rates
+                    rateTimestamp = runAt
                 }
             }
             prevCounters = counters
@@ -139,7 +151,7 @@ public final class NetworkProcessReader {
             // Adaptive pacing: a floor on fast machines, and on slow ones a pause
             // proportional to the run itself so nettop never respawns back-to-back.
             let elapsed = Date().timeIntervalSince(runAt)
-            let pause = Self.paceSleep(afterRunTaking: elapsed)
+            let pause = max(self.refreshInterval - elapsed, Self.paceSleep(afterRunTaking: elapsed))
             if pause > 0 {
                 Thread.sleep(forTimeInterval: pause)
             }

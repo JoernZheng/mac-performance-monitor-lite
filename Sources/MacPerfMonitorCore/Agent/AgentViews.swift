@@ -106,7 +106,7 @@ public enum AgentViews {
         ]
         .map { "\(path) LIKE '\($0)%'" }.joined(separator: " OR ")
         return """
-            CASE WHEN \(path) IS NULL OR \(path) = '' OR \(path) = '\(SustainedCPU.launcherPath)' \
+            CASE WHEN \(path) IS NULL OR \(path) = '' OR \(path) = '/usr/libexec/xpcproxy' \
             THEN 'background' \
             WHEN \(system) THEN 'macos' WHEN instr(\(path), '.app/') > 0 THEN 'app' \
             ELSE 'background' END
@@ -129,11 +129,12 @@ public enum AgentViews {
             detail: "Whole-Mac processor use, 0 to 100 (all cores together). Average over the row."),
         Column(name: "cpu_peak_percent", detail: "Highest processor use within the row."),
         Column(
-            name: "memory_pressure",
+            name: "custom_pressure_index",
             detail:
                 "macOS memory pressure index 0 to 100: under 34 is fine, 34 to 66 is compressing memory, 67 and over is swapping and slow."
         ),
-        Column(name: "memory_pressure_peak", detail: "Highest memory pressure within the row."),
+        Column(
+            name: "custom_pressure_index_peak", detail: "Highest memory pressure within the row."),
         Column(name: "app_memory_gb", detail: "Memory used by apps, GB."),
         Column(name: "compressed_gb", detail: "Memory macOS has compressed to make room, GB."),
         Column(
@@ -174,7 +175,7 @@ public enum AgentViews {
         """
         SELECT timestamp AS ts, \(local("timestamp")) AS time_local, 1.0 AS resolution_seconds,
             cpu_load * 100 AS cpu_percent, cpu_load * 100 AS cpu_peak_percent,
-            pressure_percent AS memory_pressure, pressure_percent AS memory_pressure_peak,
+            pressure_percent AS custom_pressure_index, pressure_percent AS custom_pressure_index_peak,
             app_memory / \(gb) AS app_memory_gb, compressed / \(gb) AS compressed_gb,
             swap_used / \(gb) AS swap_used_gb, net_in / 1024.0 AS network_in_kb_s,
             net_out / 1024.0 AS network_out_kb_s, disk_read / \(mb) AS disk_read_mb_s,
@@ -192,7 +193,7 @@ public enum AgentViews {
         """
         SELECT bucket AS ts, \(local("bucket")) AS time_local, bucket_seconds AS resolution_seconds,
             cpu_avg * 100 AS cpu_percent, cpu_max * 100 AS cpu_peak_percent,
-            pressure_avg AS memory_pressure, pressure_max AS memory_pressure_peak,
+            pressure_avg AS custom_pressure_index, pressure_max AS custom_pressure_index_peak,
             app_avg / \(gb) AS app_memory_gb, compressed_avg / \(gb) AS compressed_gb,
             swap_used_avg / \(gb) AS swap_used_gb, net_in_avg / 1024.0 AS network_in_kb_s,
             net_out_avg / 1024.0 AS network_out_kb_s, disk_read_avg / \(mb) AS disk_read_mb_s,
@@ -333,16 +334,16 @@ public enum AgentViews {
         ],
         sql: """
             SELECT u.process_id AS process_key, p.name, p.app, p.kind, u.bucket AS ts,
-                \(local("u.bucket")) AS time_local, 60.0 AS resolution_seconds,
+                \(local("u.bucket")) AS time_local, 60.0 AS resolution_seconds, u.samples AS covered_seconds,
                 u.cpu_avg AS cpu_percent_of_one_core, u.cpu_max AS cpu_peak_percent_of_one_core,
                 u.cpu_avg / \(cores) AS cpu_share_of_mac_percent,
-                u.footprint_avg / \(mb) AS memory_mb, u.footprint_max / \(mb) AS memory_peak_mb,
+                NULLIF(u.footprint_avg, 0) / \(mb) AS memory_mb, NULLIF(u.footprint_max, 0) / \(mb) AS memory_peak_mb,
                 u.gpu_avg AS gpu_percent, u.net_avg / 1024.0 AS network_kb_s, u.energy_avg AS energy_impact,
                 u.disk_read_max AS disk_read_total_bytes, u.disk_written_max AS disk_written_total_bytes
             FROM process_minute u JOIN agent_processes p ON p.process_key = u.process_id
             UNION ALL
-            SELECT u.process_id, p.name, p.app, p.kind, u.bucket, \(local("u.bucket")), 3600.0,
-                u.cpu_avg, u.cpu_max, u.cpu_avg / \(cores), u.footprint_avg / \(mb), u.footprint_max / \(mb),
+            SELECT u.process_id, p.name, p.app, p.kind, u.bucket, \(local("u.bucket")), 3600.0, u.samples,
+                u.cpu_avg, u.cpu_max, u.cpu_avg / \(cores), NULLIF(u.footprint_avg, 0) / \(mb), NULLIF(u.footprint_max, 0) / \(mb),
                 u.gpu_avg, u.net_avg / 1024.0, u.energy_avg, u.disk_read_max, u.disk_written_max
             FROM process_hour u JOIN agent_processes p ON p.process_key = u.process_id
             WHERE u.bucket < COALESCE((SELECT MIN(bucket) FROM process_minute), 1e12)
