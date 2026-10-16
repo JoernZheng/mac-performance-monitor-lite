@@ -186,7 +186,7 @@ normal/warning/critical。`PressureIndex.compute` 的 0 至 100 是应用自定�
 
 - `MacPerfMonitorCore`：保留性能采样器、必要模型、历史查询及 SQLite 写入和聚合。
 - `RecorderKit`：配置、单实例锁、后台定时/压力事件采样、交互 idle/session 信号、覆盖计时、只读查询。
-- `mpm-lite`：record/status/summary/processes/sql/export；`mac-recorder` 保留为兼容产品。
+- `mpml`：record/status/summary/processes/sql/export；`mpm-lite` 和 `mac-recorder` 保留为兼容产品。
 - 移除 SwiftUI App、XPC/root helper、内置 AI、扫描/清理工具、上游更新、品牌资源和对应 UI 测试。
 - 保留各性能类别的可用读数；硬件、权限或私有接口限制的指标标记不可用。
   无 root helper 的第一版不保证读取 ANE 功耗及所有系统进程 footprint。

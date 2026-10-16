@@ -39,7 +39,7 @@ be unavailable. CPU fractions cover the whole machine; per-process CPU can excee
 ```sh
 Scripts/build.sh
 Scripts/test.sh
-.build/release/mpm-lite help
+.build/release/mpml help
 ```
 
 The scripts prefer the selected Xcode Git, avoiding an incompatible Intel-only
@@ -47,20 +47,33 @@ Git found earlier on the development Mac. SwiftPM resolves the pinned GRDB 7.11.
 dependency normally. They default to two compilation jobs to limit build-time
 memory use. `CONFIGURATION=debug Scripts/build.sh` selects a debug build.
 
+## Install the command
+
+```sh
+Scripts/install-cli.sh
+mpml status
+mpml summary --last 7d
+```
+
+This installs the command in `~/.local/bin` using a stable executable in the data
+directory. Ensure `~/.local/bin` is on your PATH, or pass an existing command
+directory as the first argument. It does not restart or reconfigure a running
+recording service, change the database, or enable login startup.
+
 ## Use without installing
 
 ```sh
 # A bounded test; exits cleanly after 65 seconds.
-.build/release/mpm-lite record --duration 65 --db /tmp/recorder-test.sqlite
-.build/release/mpm-lite status --db /tmp/recorder-test.sqlite
+.build/release/mpml record --duration 65 --db /tmp/recorder-test.sqlite
+.build/release/mpml status --db /tmp/recorder-test.sqlite
 
 # An ordinary long-running capture; SIGINT or SIGTERM stops it cleanly.
-.build/release/mpm-lite record
-.build/release/mpm-lite summary --last 7d
-.build/release/mpm-lite summary --last 7d --activity background_busy
-.build/release/mpm-lite processes --last 7d
-.build/release/mpm-lite export --last 7d --format jsonl --output week.jsonl
-.build/release/mpm-lite sql 'SELECT pressure_level,COUNT(*) FROM recorder_samples GROUP BY pressure_level'
+.build/release/mpml record
+.build/release/mpml summary --last 7d
+.build/release/mpml summary --last 7d --activity background_busy
+.build/release/mpml processes --last 7d
+.build/release/mpml export --last 7d --format jsonl --output week.jsonl
+.build/release/mpml sql 'SELECT pressure_level,COUNT(*) FROM recorder_samples GROUP BY pressure_level'
 ```
 
 The default data directory is `~/Library/Application Support/MacPerformanceRecorder`,
@@ -122,18 +135,18 @@ This fork does not install or enable the upstream privileged helper.
 
 The project and fork are named **Mac Performance Monitor Lite**
 ([mac-performance-monitor-lite](https://github.com/JoernZheng/mac-performance-monitor-lite)).
-The command is `mpm-lite`. The `mac-recorder` build product remains available for
+The command is `mpml`. The `mpm-lite` and `mac-recorder` build products remain available for
 existing integrations. For continuity, the data directory stays
 `MacPerformanceRecorder`, the LaunchAgent label stays
 `org.joernzheng.mac-performance-recorder`, and its executable path stays
 `bin/mac-recorder`. These are intentional compatibility identifiers. Renaming the
 project does not migrate the database or restart an existing recording service.
-The installation script also provides a `bin/mpm-lite` command.
+The service installation script also provides `bin/mpml` and `bin/mpm-lite` commands.
 
 ## Development
 
 Architecture and scope: [design notes](docs/personal-recorder-design.md).
 Core readers and SQL retention originate in the upstream project. The new
 `RecorderKit` owns background lifecycle, native-state coverage, activity signals,
-configuration and read-only queries. `mpm-lite` is the primary executable; `mac-recorder` remains a compatibility product.
+configuration and read-only queries. `mpml` is the primary executable; `mpm-lite` and `mac-recorder` remain compatibility products.
 Installation scripts are not run by building or testing.

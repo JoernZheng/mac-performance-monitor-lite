@@ -7,7 +7,7 @@ The implementation branch is codex/lite in the
 ## Required checks
 
 - Release build using Scripts/build.sh and pinned GRDB 7.11.0.
-- Scripts/test.sh: 92 tests passed after the Lite naming change.
+- Scripts/test.sh: 92 tests passed after the mpml command rename.
 - Strict Swift formatting, shell syntax and whitespace checks.
 
 Coverage includes native-state independence from the custom pressure index,
@@ -26,9 +26,11 @@ Ordinary-user permission gaps were explicitly annotated.
 
 During the project rename, the existing LaunchAgent, executable and data directory
 remain in place. The renamed command reads that database without migrating it.
-The new command and compatibility product both display the Lite name, and the
+The mpml command and both compatibility products display the Lite name, and the
 new command reads the live database with the same open run and original history
-start. Detailed local measurements and captures are deliberately excluded from Git.
+start. CLI-only installation exposes mpml on PATH and rejects an unrelated
+command with the same name, without changing the existing service configuration
+or executable. Detailed local measurements and captures are excluded from Git.
 
 This does not establish long-term battery cost, multi-day growth, exhaustive reader
 correctness, or a repository-wide security audit. CI and actual logout/login tests

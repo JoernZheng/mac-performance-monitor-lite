@@ -81,12 +81,12 @@ func printJSON(_ object: Any) throws {
 let help = """
     Mac Performance Monitor Lite: local background capture and read-only analysis.
 
-      mpm-lite record [options]        Record all available performance metric families
-      mpm-lite status                  Latest recording run and actual data coverage
-      mpm-lite summary --last 7d       Time-weighted native pressure by activity class
-      mpm-lite processes --last 7d     Per-process historical memory and CPU
-      mpm-lite sql 'SELECT ...'        One read-only query (max 10,000 rows)
-      mpm-lite export --last 7d        Stream complete metric snapshots (JSONL or CSV)
+      mpml record [options]        Record all available performance metric families
+      mpml status                  Latest recording run and actual data coverage
+      mpml summary --last 7d       Time-weighted native pressure by activity class
+      mpml processes --last 7d     Per-process historical memory and CPU
+      mpml sql 'SELECT ...'        One read-only query (max 10,000 rows)
+      mpml export --last 7d        Stream complete metric snapshots (JSONL or CSV)
 
     Common: --db PATH
     Queries: --last 7d | --from UNIX_OR_ISO8601 --to UNIX_OR_ISO8601
@@ -193,6 +193,6 @@ do {
     default: throw RecorderError.message("Unknown command: \(options.command). Use help.")
     }
 } catch {
-    FileHandle.standardError.write(Data("mpm-lite: \(error.localizedDescription)\n".utf8))
+    FileHandle.standardError.write(Data("mpml: \(error.localizedDescription)\n".utf8))
     exit(1)
 }

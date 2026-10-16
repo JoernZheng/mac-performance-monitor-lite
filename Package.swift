@@ -6,8 +6,9 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "mpm-lite", targets: ["mpm-lite"]),
-        .executable(name: "mac-recorder", targets: ["mpm-lite"]),
+        .executable(name: "mpml", targets: ["mpml"]),
+        .executable(name: "mpm-lite", targets: ["mpml"]),
+        .executable(name: "mac-recorder", targets: ["mpml"]),
         .library(name: "RecorderKit", targets: ["RecorderKit"]),
     ],
     dependencies: [.package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.11.0")],
@@ -19,7 +20,7 @@ let package = Package(
         .target(
             name: "RecorderKit",
             dependencies: ["MacPerfMonitorCore", .product(name: "GRDB", package: "GRDB.swift")]),
-        .executableTarget(name: "mpm-lite", dependencies: ["RecorderKit"]),
+        .executableTarget(name: "mpml", dependencies: ["RecorderKit"]),
         .testTarget(
             name: "MacPerfMonitorCoreTests",
             dependencies: ["MacPerfMonitorCore", .product(name: "GRDB", package: "GRDB.swift")]),

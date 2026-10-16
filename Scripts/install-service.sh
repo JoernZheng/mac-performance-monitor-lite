@@ -2,7 +2,7 @@
 # Explicitly install the already-built executable as a per-user LaunchAgent.
 set -euo pipefail
 recorder_root=$(cd "$(dirname "$0")/.." && pwd)
-recorder_binary="${1:-$recorder_root/.build/release/mpm-lite}"
+recorder_binary="${1:-$recorder_root/.build/release/mpml}"
 if [ ! -x "$recorder_binary" ]; then
     echo 'Build first with Scripts/build.sh, or pass the built executable path.' >&2
     exit 1
@@ -17,6 +17,7 @@ launchctl bootout "gui/$(id -u)/$recorder_label" 2>/dev/null || true
 # The service runs a stable copy, never a build artifact being overwritten.
 install -m 700 "$recorder_binary" "$recorder_support/bin/mac-recorder"
 # Keep the service path stable while exposing the new command name.
+ln -sfn mac-recorder "$recorder_support/bin/mpml"
 ln -sfn mac-recorder "$recorder_support/bin/mpm-lite"
 python3 - "$recorder_support" "$recorder_agents/$recorder_label.plist" "$recorder_label" <<'PY'
 import os,plistlib,sys
@@ -34,4 +35,4 @@ os.chmod(path,0o600)
 PY
 launchctl bootstrap "gui/$(id -u)" "$recorder_agents/$recorder_label.plist"
 echo "Installed $recorder_label. Query with:"
-printf '"%s/bin/mpm-lite" status\n' "$recorder_support"
+printf '"%s/bin/mpml" status\n' "$recorder_support"
