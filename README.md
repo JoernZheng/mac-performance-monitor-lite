@@ -1,8 +1,8 @@
 # Mac Performance Monitor Lite
 
-A local, headless macOS performance recorder, maintained independently from
+A local macOS background performance recorder with an optional Dashboard, maintained independently from
 [Mac Performance Monitor](https://github.com/Zesty0wl/mac-performance-monitor).
-Requires macOS 15+, Apple silicon and Swift 6 to build. No GUI, telemetry,
+Requires macOS 15+, Apple silicon and Swift 6 to build. No telemetry,
 automatic updater, cloud model or root helper.
 
 ## Build and install
@@ -13,7 +13,7 @@ Scripts/install-cli.sh
 mpml install
 ```
 
-The CLI installer uses `~/.local/bin`; add it to PATH if needed, or pass another
+The installer copies the CLI and optional viewer. It uses `~/.local/bin`; add it to PATH if needed, or pass another
 command directory to the script. `mpml install` starts a per-user login service,
 without sudo. Running it again leaves an already-loaded service unchanged.
 
@@ -28,6 +28,7 @@ available. The executable manages the service itself and needs no source checkou
 
 ```sh
 mpml status
+mpml dashboard
 mpml summary --last 7d
 mpml summary --last 7d --activity background_busy
 mpml processes --last 7d
@@ -39,6 +40,20 @@ Use `--from` and `--to` with Unix seconds or ISO 8601 timestamps for exact windo
 SQL queries are read-only and row-limited; exports stream the selected snapshots.
 Use `mpml help` for all options. Old command names `mpm-lite` and `mac-recorder`
 remain available as build products for compatibility.
+
+`mpml dashboard` opens a native window on demand. It reads existing history without
+starting another sampler, migrating the database or changing login startup. Close
+the window to exit the viewer; background recording continues. It supports 5-minute
+through 7-day ranges and user-active, background-busy, idle and unknown filters.
+Use `mpml dashboard --db PATH` to view another recorded database.
+
+Charts show memory, CPU/GPU, network, disk, temperature, power and the separate custom
+pressure index. Native pressure is shown as time in each state. Bucket means are
+time-weighted, with min/max shading; collection and filtered-out gaps remain breaks.
+The latest matching sample can be historical, and is labeled accordingly. Process
+CPU, memory and disk rankings estimate activity overlap from minute/hour rollups;
+they cannot recover exact per-activity usage within a mixed rollup. The viewer
+refreshes once a minute while active and pauses when inactive.
 
 To try a bounded capture without enabling login startup:
 
@@ -78,3 +93,5 @@ process names and paths; review them before sharing. See [privacy](SECURITY.md).
 `main` is the maintenance branch. There is no hosted CI; validation is local.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and module boundaries.
 The original MIT license and attribution are preserved in [LICENSE](LICENSE).
+Report bugs with the short English [Issue form](https://github.com/JoernZheng/mac-performance-monitor-lite/issues/new/choose).
+Blank Issues are welcome for questions and feature requests. Sanitize diagnostics before sharing.

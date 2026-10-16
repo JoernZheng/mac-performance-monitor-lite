@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import IOKit
 
-public enum ActivityKind: String, Codable, CaseIterable {
+public enum ActivityKind: String, Codable, CaseIterable, Sendable {
     case userActive = "user_active"
     case backgroundBusy = "background_busy"
     case idle

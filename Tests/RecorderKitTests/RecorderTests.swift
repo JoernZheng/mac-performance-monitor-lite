@@ -208,4 +208,111 @@ final class RecorderTests: XCTestCase {
         XCTAssertTrue(rows[0]["peak_memory_mb"] is NSNull)
     }
 
+    func testDashboardSplitsClippedIntervalsAndKeepsNativePressureSeparate() throws {
+        let store = try RecorderStore(url: url, configuration: RecorderConfiguration())
+        var first = sample(at: 20, level: .critical)
+        first.system.pressurePercent = 12
+        var second = sample(at: 50, level: .warning)
+        second.system.appMemory = 8 << 30
+        try store.append(first, coveredSeconds: 20, processes: nil)
+        try store.append(second, coveredSeconds: 30, processes: nil)
+        let query = try RecorderQuery(url: url)
+        let data = try query.dashboard(window: QueryWindow(from: 15, to: 35), bucketCount: 12)
+        XCTAssertEqual(data.selectedSeconds, 20, accuracy: 0.0001)
+        XCTAssertEqual(data.pressureSeconds[4], 5)
+        XCTAssertEqual(data.pressureSeconds[2], 15)
+        XCTAssertEqual(try XCTUnwrap(data.means[.appMemory]).mean, 7, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(data.means[.appMemory]).minimum, 4)
+        XCTAssertEqual(try XCTUnwrap(data.means[.appMemory]).maximum, 8)
+        XCTAssertEqual(try XCTUnwrap(data.means[.pressureIndex]).mean, 3, accuracy: 0.0001)
+        XCTAssertNil(data.means[.cpu])
+        XCTAssertNil(data.means[.download])
+        XCTAssertEqual(data.buckets.count, 12)
+        XCTAssertEqual(data.buckets.reduce(0) { $0 + $1.seconds }, 20, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(data.latest).values[.free], 1)
+    }
+
+    func testDashboardFiltersAllPanelsAndDoesNotBridgeExcludedOrMissingTime() throws {
+        let store = try RecorderStore(url: url, configuration: RecorderConfiguration())
+        try store.append(sample(at: 30), coveredSeconds: 10, processes: nil)
+        try store.append(
+            sample(at: 40, activity: .backgroundBusy), coveredSeconds: 10, processes: nil)
+        try store.append(sample(at: 50), coveredSeconds: 10, processes: nil)
+        try store.append(sample(at: 120, valid: false), coveredSeconds: 10, processes: nil)
+        try store.append(sample(at: 1000, activity: .idle), coveredSeconds: 0, processes: nil)
+        let query = try RecorderQuery(url: url)
+        let data = try query.dashboard(
+            window: QueryWindow(from: 0, to: 1200), activity: .userActive, bucketCount: 12)
+        XCTAssertEqual(data.recordedSeconds, 40)
+        XCTAssertEqual(data.unrecordedSeconds, 1160)
+        XCTAssertEqual(data.selectedSeconds, 30)
+        XCTAssertEqual(data.activitySeconds[.backgroundBusy], 10)
+        XCTAssertEqual(data.pressureSeconds[0], 10)
+        XCTAssertEqual(data.buckets.count, 2)
+        XCTAssertNotEqual(data.buckets[0].segment, data.buckets[1].segment)
+        XCTAssertNil(data.buckets[1].values[.pressureIndex])
+        let absent = try query.dashboard(window: QueryWindow(from: 0, to: 1200), activity: .idle)
+        XCTAssertEqual(absent.selectedSeconds, 0)
+        XCTAssertEqual(absent.recordedSeconds, 40)
+        XCTAssertNil(absent.latest)
+        XCTAssertTrue(absent.topCPU.isEmpty)
+        XCTAssertThrowsError(try query.dashboard(window: QueryWindow(from: 0, to: 8 * 86400)))
+    }
+
+    func testDashboardReaderLeavesSchemaHistoryAndConcurrentWriterIntact() throws {
+        let store = try RecorderStore(url: url, configuration: RecorderConfiguration())
+        let query = try RecorderQuery(url: url)
+        let schema = try query.query("SELECT name,sql FROM sqlite_master ORDER BY name").csv()
+        let empty = try query.dashboard(window: QueryWindow(from: 0, to: 60))
+        XCTAssertEqual(empty.unrecordedSeconds, 60)
+        try store.append(sample(at: 10), coveredSeconds: 10, processes: nil)
+        _ = try query.dashboard(window: QueryWindow(from: 0, to: 60))
+        XCTAssertThrowsError(
+            try query.pool.write { db in
+                try db.execute(sql: "DELETE FROM recorder_samples")
+            })
+        try store.append(sample(at: 20), coveredSeconds: 10, processes: nil)
+        let result = try query.dashboard(window: QueryWindow(from: 0, to: 60))
+        XCTAssertEqual(result.selectedSeconds, 20)
+        XCTAssertEqual(
+            try query.query("SELECT name,sql FROM sqlite_master ORDER BY name").csv(), schema)
+        XCTAssertEqual(
+            try query.query("SELECT COUNT(*) AS n FROM recorder_runs").rows[0][0] as? Int64, 1)
+        XCTAssertEqual(
+            try query.query("SELECT MIN(timestamp) AS first FROM recorder_samples").rows[0][0]
+                as? Double, 10)
+    }
+
+    func testDashboardProcessRankingsRespectActivityOverlap() throws {
+        let store = try RecorderStore(url: url, configuration: RecorderConfiguration())
+        try store.append(sample(at: 90), coveredSeconds: 30, processes: nil)
+        try store.append(sample(at: 120, activity: .idle), coveredSeconds: 30, processes: nil)
+        try store.pool.write { db in
+            try db.execute(
+                sql:
+                    "INSERT INTO processes (pid,name,executable_path,bundle_id,start_time,uid,first_seen,last_seen,is_translated,architecture) VALUES (42,'Fixture','/tmp/Fixture',NULL,1,501,60,180,0,'arm64')"
+            )
+            let id = db.lastInsertedRowID
+            // One process exists only in the selected minute, another only in an excluded minute.
+            try db.execute(
+                sql:
+                    "INSERT INTO process_minute (bucket,process_id,footprint_min,footprint_avg,footprint_max,cpu_avg,samples) VALUES (60,?,104857600,104857600,104857600,20,60)",
+                arguments: [id])
+            try db.execute(
+                sql:
+                    "INSERT INTO processes (pid,name,executable_path,bundle_id,start_time,uid,first_seen,last_seen,is_translated,architecture) VALUES (43,'Excluded','/tmp/Excluded',NULL,1,501,180,240,0,'arm64')"
+            )
+            let excluded = db.lastInsertedRowID
+            try db.execute(
+                sql:
+                    "INSERT INTO process_minute (bucket,process_id,footprint_min,footprint_avg,footprint_max,cpu_avg,samples) VALUES (180,?,104857600,104857600,104857600,80,60)",
+                arguments: [excluded])
+        }
+        let data = try RecorderQuery(url: url).dashboard(
+            window: QueryWindow(from: 60, to: 240), activity: .userActive)
+        XCTAssertEqual(data.topCPU.map(\.name), ["Fixture"])
+        XCTAssertEqual(data.topMemory.first?.meanMemoryMB, 100)
+        XCTAssertNil(data.topDisk.first)  // No earlier counter to calculate a rate.
+    }
+
 }

@@ -9,6 +9,7 @@ Use an isolated checkout, inspect the diff and preserve unrelated changes.
 - `MacPerfMonitorCore`: metric readers, sampling, SQLite writes and retention.
 - `RecorderKit`: background lifecycle, activity/coverage, service management and queries.
 - `mpml`: command parsing and output.
+- `mpml-dashboard`: optional SwiftUI/Charts viewer, using read-only RecorderKit queries.
 
 There is no hosted CI or required Git hook. Run these checks locally:
 
@@ -26,7 +27,8 @@ replace a running recorder, or touch live history. Installation is an explicit a
 
 Keep missing readings distinct from zero, and never turn collection gaps into idle
 or normal-pressure time. Preserve database and service IDs across upgrades. Retain
-all supported metric families; this project has no UI, scanning or cleanup tools.
+all supported metric families. The optional Dashboard must not sample hardware,
+write or migrate history, or manage the recording service. No scanning or cleanup tools.
 
 Keep credentials, databases, logs, exports and machine-specific notes out of Git.
 Commit and push permissions remain separate.

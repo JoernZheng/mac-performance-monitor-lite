@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "mpml", targets: ["mpml"]),
+        .executable(name: "mpml-dashboard", targets: ["mpml-dashboard"]),
         .executable(name: "mpm-lite", targets: ["mpml"]),
         .executable(name: "mac-recorder", targets: ["mpml"]),
         .library(name: "RecorderKit", targets: ["RecorderKit"]),
@@ -20,6 +21,7 @@ let package = Package(
             name: "RecorderKit",
             dependencies: ["MacPerfMonitorCore", .product(name: "GRDB", package: "GRDB.swift")]),
         .executableTarget(name: "mpml", dependencies: ["RecorderKit"]),
+        .executableTarget(name: "mpml-dashboard", dependencies: ["RecorderKit"]),
         .testTarget(
             name: "MacPerfMonitorCoreTests",
             dependencies: ["MacPerfMonitorCore", .product(name: "GRDB", package: "GRDB.swift")]),

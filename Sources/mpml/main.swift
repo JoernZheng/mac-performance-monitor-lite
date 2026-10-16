@@ -85,6 +85,7 @@ let help = """
       mpml uninstall               Stop/remove login startup; keep history and CLI
       mpml record [options]        Record all available performance metric families
       mpml status                  Latest recording run and actual data coverage
+      mpml dashboard [--db PATH]   Open the optional read-only history window
       mpml summary --last 7d       Time-weighted native pressure by activity class
       mpml processes --last 7d     Per-process historical memory and CPU
       mpml sql 'SELECT ...'        One read-only query (max 10,000 rows)
@@ -151,6 +152,34 @@ do {
         try service.run(duration: duration)
     case "status":
         try printJSON(RecorderQuery(url: options.database).status())
+    case "dashboard":
+        guard options.values.keys.allSatisfy({ $0 == "--db" }),
+            options.switches.isEmpty, options.positional.isEmpty,
+            let executable = Bundle.main.executableURL
+        else { throw RecorderError.message("dashboard accepts only --db PATH.") }
+        let viewer = executable.resolvingSymlinksInPath().deletingLastPathComponent()
+            .appendingPathComponent("Mac Performance Monitor Lite.app")
+        guard
+            FileManager.default.isExecutableFile(
+                atPath: viewer.appendingPathComponent("Contents/MacOS/mpml-dashboard").path)
+        else {
+            throw RecorderError.message(
+                "Dashboard is not installed. Build and run Scripts/install-cli.sh to install both executables."
+            )
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments =
+            (options.values["--db"] == nil ? [] : ["-n"])
+            + ["-a", viewer.path, "--args", "--db", options.database.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.standardError
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw RecorderError.message("macOS could not open the Dashboard application.")
+        }
+        print("Opened the read-only Dashboard. Background recording is unchanged.")
     case "summary":
         let activity: ActivityKind?
         if let raw = options.values["--activity"] {

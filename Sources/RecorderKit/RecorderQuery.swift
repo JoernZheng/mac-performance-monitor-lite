@@ -43,7 +43,7 @@ public struct QueryWindow {
 }
 
 public final class RecorderQuery {
-    private let pool: DatabasePool
+    let pool: DatabasePool
     public init(url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw RecorderError.message("No recorded history at \(url.path). Start record first.")

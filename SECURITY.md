@@ -17,4 +17,4 @@ what it reads to its own provider; that is outside this executable.
 Keep credentials, live databases, logs and diagnostic exports out of Git and public
 reports. Report vulnerabilities privately to the maintainer using private reporting
 if available. Include a minimal sanitized reproduction. Local checks are not a
-security audit; this project does not provide signed/notarized app packages.
+security audit; builds use local ad-hoc signing, not Developer ID signing or notarization.
