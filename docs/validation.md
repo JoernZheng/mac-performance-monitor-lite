@@ -1,13 +1,13 @@
 # Mac Performance Monitor Lite validation
 
 Baseline upstream commit: bfbd512dd5e2e00b763f8b58e2986e3549885fd7.
-The implementation branch is codex/lite in the
-[personal fork](https://github.com/JoernZheng/mac-performance-monitor-lite/tree/codex/lite).
+The authoritative branch is main in the
+[personal fork](https://github.com/JoernZheng/mac-performance-monitor-lite/tree/main).
 
 ## Required checks
 
 - Release build using Scripts/build.sh and pinned GRDB 7.11.0.
-- Scripts/test.sh: 92 tests passed after the mpml command rename.
+- Scripts/test.sh: 100 tests passed, including eight isolated service-lifecycle tests.
 - Strict Swift formatting, shell syntax and whitespace checks.
 
 Coverage includes native-state independence from the custom pressure index,
@@ -23,6 +23,13 @@ on Apple silicon. System snapshots, process rollups, native pressure and complet
 JSONL export were checked. SIGTERM saved the final interval and ended the run;
 concurrent writers were rejected while read-only queries remained usable.
 Ordinary-user permission gaps were explicitly annotated.
+
+Service tests use a temporary home directory and a fake launchd backend. They
+cover first installation, no-op repeat installation, preserved custom recording
+arguments, history/log/CLI preservation, repeated uninstall, conflicting manifests,
+bootstrap failure and failed removal. Live uninstall is not run against an active
+recording as part of validation. Live repeated install verifies that the existing
+process, executable, plist and history start remain unchanged.
 
 During the project rename, the existing LaunchAgent, executable and data directory
 remain in place. The renamed command reads that database without migrating it.

@@ -1,11 +1,12 @@
 # Developing Mac Performance Monitor Lite
 
-This fork is a headless performance recorder. The accepted scope is all available
+This project is a headless performance recorder. The accepted scope is all available
 performance metric families, native macOS memory pressure, activity classification,
 local persistence and read-only command-line analysis. See README.md and
 `docs/personal-recorder-design.md` before changing collection or statistical semantics.
 
-Use the dedicated `codex/lite` worktree. Preserve the upstream MIT license.
+The authoritative development branch is `main`; maintain Lite independently of
+the original project. Use an isolated checkout for changes and preserve the MIT license.
 Do not restore the upstream updater, app identity, data directory, or GUI dependencies.
 Missing values must remain distinguishable from zero, and gaps must not become idle
 or normal-pressure coverage. Activity classes are estimates, not verified work records.

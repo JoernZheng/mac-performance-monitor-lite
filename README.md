@@ -1,6 +1,6 @@
 # Mac Performance Monitor Lite
 
-A lightweight, headless fork of [Mac Performance Monitor](https://github.com/Zesty0wl/mac-performance-monitor).
+An independently maintained, headless derivative of [Mac Performance Monitor](https://github.com/Zesty0wl/mac-performance-monitor).
 It records locally in the background and provides read-only command-line analysis.
 macOS 15+, Apple silicon, Swift 6. No dashboard, embedded AI, automatic updater, telemetry,
 network scanning, or disk cleanup tools. The upstream MIT license is preserved.
@@ -115,25 +115,32 @@ minutes complete and describe retained resolution. A configurable database budge
 can shorten history. Check `status` and query coverage before interpreting absence
 of readings. A recent timestamp is a freshness signal, not proof a process is alive.
 
-## Optional login startup
-
-After reviewing a bounded capture, explicitly run:
+## Login startup
 
 ```sh
-Scripts/install-service.sh
+mpml install       # Install and immediately start this user's login service
+mpml uninstall     # Stop/remove the login service; keep history, logs and CLI
 ```
 
-This copies the release executable to the recorder data directory and installs a
-per-user LaunchAgent. It uses no root daemon and has no window or menu icon.
-`Scripts/uninstall-service.sh` stops it and removes login startup while preserving
-history. Startup and error messages go to `service.log` beside the database.
-Configuration changes can be made to the LaunchAgent arguments.
-Service errors end the current run and launchd restarts it with a 30-second throttle.
-This fork does not install or enable the upstream privileged helper.
+These commands are built into the executable and work outside the source checkout.
+Run them as your logged-in user, without sudo. The service starts after user login,
+not before login as a system-wide daemon. Repeating install leaves an already
+loaded, configured service unchanged. A stopped installation preserves its existing
+recording arguments when started again. Unknown/conflicting plists are left intact.
+
+A fresh install copies the executable to the stable recorder directory, writes the
+per-user LaunchAgent, and asks launchd to start it. Uninstall stops that job and
+removes only its login plist. It does not delete the database, logs or the CLI;
+history queries remain available. The old installation shell scripts delegate to
+these commands for compatibility.
+
+Startup/error messages go to service.log beside the database. Configuration can
+be adjusted in the LaunchAgent arguments. launchd restarts failed runs with a
+30-second throttle. There is no window, menu icon or privileged helper.
 
 ## Naming and existing installations
 
-The project and fork are named **Mac Performance Monitor Lite**
+The project is named **Mac Performance Monitor Lite**
 ([mac-performance-monitor-lite](https://github.com/JoernZheng/mac-performance-monitor-lite)).
 The command is `mpml`. The `mpm-lite` and `mac-recorder` build products remain available for
 existing integrations. For continuity, the data directory stays
@@ -141,7 +148,7 @@ existing integrations. For continuity, the data directory stays
 `org.joernzheng.mac-performance-recorder`, and its executable path stays
 `bin/mac-recorder`. These are intentional compatibility identifiers. Renaming the
 project does not migrate the database or restart an existing recording service.
-The service installation script also provides `bin/mpml` and `bin/mpm-lite` commands.
+Fresh service installation also provides `bin/mpml` and `bin/mpm-lite` commands.
 
 ## Development
 
@@ -150,3 +157,7 @@ Core readers and SQL retention originate in the upstream project. The new
 `RecorderKit` owns background lifecycle, native-state coverage, activity signals,
 configuration and read-only queries. `mpml` is the primary executable; `mpm-lite` and `mac-recorder` remain compatibility products.
 Installation scripts are not run by building or testing.
+
+The authoritative branch is `main`. Lite is maintained independently and does not
+follow an upstream remote. Upstream attribution, the MIT license and Git history
+are retained; the GitHub fork-origin marker is provenance, not automatic syncing.

@@ -81,6 +81,8 @@ func printJSON(_ object: Any) throws {
 let help = """
     Mac Performance Monitor Lite: local background capture and read-only analysis.
 
+      mpml install                 Install and start this user's login service
+      mpml uninstall               Stop/remove login startup; keep history and CLI
       mpml record [options]        Record all available performance metric families
       mpml status                  Latest recording run and actual data coverage
       mpml summary --last 7d       Time-weighted native pressure by activity class
@@ -89,6 +91,8 @@ let help = """
       mpml export --last 7d        Stream complete metric snapshots (JSONL or CSV)
 
     Common: --db PATH
+    Install/uninstall: no options; run as your logged-in user without sudo.
+    Repeating install leaves an already-running configured service unchanged.
     Queries: --last 7d | --from UNIX_OR_ISO8601 --to UNIX_OR_ISO8601
              --format json|csv --limit 500 (sql/processes)
     Summary: --activity user_active|background_busy|idle|unknown (default: all)
@@ -112,6 +116,16 @@ do {
         exit(0)
     }
     switch options.command {
+    case "install", "uninstall":
+        guard options.values.isEmpty, options.switches.isEmpty, options.positional.isEmpty else {
+            throw RecorderError.message(
+                "install/uninstall take no options. Use --help for service behavior.")
+        }
+        guard let executable = Bundle.main.executableURL else {
+            throw RecorderError.message("Cannot determine the mpml executable path.")
+        }
+        let manager = ServiceManager(executableURL: executable)
+        print(try options.command == "install" ? manager.install() : manager.uninstall())
     case "record":
         var configuration = RecorderConfiguration()
         configuration.interval = try options.number("--interval", default: 10)

@@ -3,11 +3,11 @@
 分析日期：2026-10-15。基线：`bfbd512dd5e2e00b763f8b58e2986e3549885fd7`。
 
 上游：<https://github.com/Zesty0wl/mac-performance-monitor>。
-个人 fork：<https://github.com/JoernZheng/mac-performance-monitor-lite>。
-工作分支：`codex/lite`。
+项目仓库：<https://github.com/JoernZheng/mac-performance-monitor-lite>。
+工作分支：`main`。
 
-状态：已完成 fork、模块分析和第一版纯后台改造，代码在本地 `codex/lite` 分支。
-项目采用 Mac Performance Monitor Lite 名称，工作分支为 `codex/lite`。
+状态：已完成模块分析及后台改造，Lite 在 `main` 独立维护，不再跟踪上游 remote。
+项目采用 Mac Performance Monitor Lite 名称，工作分支为 `main`。
 以下第 1 至 6 节保留改造前的源码分析和初始建议；
 最终范围以本节及第 7 节的用户决定为准。不是全仓逐行安全审计。
 
